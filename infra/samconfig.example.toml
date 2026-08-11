@@ -1,0 +1,10 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "recallops-demo"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+region = "us-east-1"
+parameter_overrides = "DemoTenantId=demo-logistics"
+tags = "Project=RecallOps Purpose=HackathonJudgeDemo"

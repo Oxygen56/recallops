@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: RecallOps judge demo - Lambda API and private S3 evidence receipts
+
+Parameters:
+  DatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: CockroachDB Cloud connection string with sslmode=verify-full
+  DemoTenantId:
+    Type: String
+    Default: demo-logistics
+  McpServerUrl:
+    Type: String
+    Default: https://cockroachlabs.cloud/mcp
+  McpClusterId:
+    Type: String
+    Default: ""
+  McpServiceAccountApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+  BedrockModelId:
+    Type: String
+    Default: amazon.nova-lite-v1:0
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    MemorySize: 512
+    Timeout: 30
+    Tracing: Active
+    Environment:
+      Variables:
+        DATABASE_URL: !Ref DatabaseUrl
+        DEMO_TENANT_ID: !Ref DemoTenantId
+        EVIDENCE_BUCKET: !Ref EvidenceBucket
+        MCP_SERVER_URL: !Ref McpServerUrl
+        MCP_CLUSTER_ID: !Ref McpClusterId
+        MCP_SERVICE_ACCOUNT_API_KEY: !Ref McpServiceAccountApiKey
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+
+Resources:
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-demo-receipts
+            Status: Enabled
+            ExpirationInDays: 45
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  EvidenceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EvidenceBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt EvidenceBucket.Arn
+              - !Sub "${EvidenceBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  RecallOpsApi:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../api/dist/
+      Handler: lambda.handler
+      ReservedConcurrentExecutions: 2
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins: ["*"]
+          AllowMethods: [GET, POST]
+          AllowHeaders: [content-type, idempotency-key, x-recallops-fault]
+          MaxAge: 300
+      Policies:
+        - S3WritePolicy:
+            BucketName: !Ref EvidenceBucket
+        - Statement:
+            - Sid: InvokeBoundedReasoningModel
+              Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}"
+      Tags:
+        Project: RecallOps
+        Purpose: HackathonJudgeDemo
+
+Outputs:
+  ApiUrl:
+    Description: Public, rate-limited judge demo API URL
+    Value: !GetAtt RecallOpsApiUrl.FunctionUrl
+  EvidenceBucketName:
+    Description: Private evidence receipt bucket
+    Value: !Ref EvidenceBucket
+  FunctionName:
+    Value: !Ref RecallOpsApi

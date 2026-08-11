@@ -1,0 +1,37 @@
+{
+  "name": "@recallops/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && esbuild src/lambda.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/lambda.mjs",
+    "dev": "tsx watch src/server.ts",
+    "migrate": "tsx src/migrate.ts",
+    "seed": "tsx src/seed.ts",
+    "demo": "tsx src/demo.ts",
+    "mcp:audit": "tsx src/mcpAuditCli.ts",
+    "test": "vitest run --reporter=verbose",
+    "test:integration": "REQUIRE_DATABASE=1 vitest run test/integration.test.ts --reporter=verbose"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1108.0",
+    "@aws-sdk/client-s3": "^3.1108.0",
+    "@hono/node-server": "^2.1.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "hono": "^4.13.1",
+    "pg": "^8.23.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.162",
+    "@types/node": "^26.2.0",
+    "@types/pg": "^8.21.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
