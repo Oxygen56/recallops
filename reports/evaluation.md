@@ -6,6 +6,7 @@
 - Judge interface: lint passed; 2/2 server-rendering and accessibility tests passed.
 - Failure scenario: all 7 assertions passed in `artifacts/evidence/local-demo.json`.
 - Reproducible run: `full-local-gate-v2` completed successfully through the competition experiment ledger.
+- Remote verification: GitHub Actions run `31535068834` passed the full database/API/interface gate on a clean Ubuntu runner.
 
 ## What is exercised
 
