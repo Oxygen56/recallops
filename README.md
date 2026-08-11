@@ -1,5 +1,7 @@
 # RecallOps
 
+[![RecallOps verification](https://github.com/Oxygen56/recallops/actions/workflows/ci.yml/badge.svg)](https://github.com/Oxygen56/recallops/actions/workflows/ci.yml)
+
 **A reversible supply-chain incident agent with durable, auditable memory.**
 
 RecallOps helps an operations lead respond to delays, quality holds, and supplier failures without repeating past mistakes. Every recommendation is backed by a provenance-bearing memory, every external action is proposed before execution, and every mutation is idempotent, revocable, and recoverable after ambiguous failures.
