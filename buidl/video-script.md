@@ -8,7 +8,7 @@ Target runtime: 2:50. Spoken language: English. Show the live product, not slide
 
 Show the hero and the five live evidence counters.
 
-Open the operational memory gate and click **Run 10-check memory gate**. Keep the click and the real **RUNNING** state visible for two seconds, then use an explicit on-screen jump cut: **≈48 seconds later — same live run**. The public flow currently takes about 48 seconds; preserve the exact elapsed time shown by the recorded receipt rather than replacing it with the caption.
+Open the operational memory gate and click **Run 10-check memory gate**. Keep the click and the real **RUNNING** state visible for two seconds, then use an explicit on-screen jump cut: **≈50 seconds later — same live run**. The source-bound CockroachDB Cloud receipt took 49.668 seconds; preserve the exact elapsed time shown by the newly recorded public receipt rather than replacing it with the caption.
 
 “This is not a checklist screenshot. RecallOps attacks a fresh isolated application tenant in CockroachDB, returns per-check proof, verifies the real cosine vector plan, and audits cleanup to zero rows.” Hold on the 10/10 result, its displayed elapsed time, database version, vector index, cleanup count, and short evaluation ID.
 

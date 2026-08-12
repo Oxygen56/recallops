@@ -73,7 +73,7 @@ Run only the judge-facing operational memory gate:
 cd api && npm run evaluate
 ```
 
-This creates fresh UUID evaluation tenants, executes the ten database-backed checks, verifies the cosine vector plan, then audits deletion across every evaluation table. The latest cloud run passed 10/10 in 30.395 seconds on CockroachDB Cloud v26.2.5, with cleanup verified and zero rows remaining. Machine-readable receipts are `artifacts/evidence/safety-evaluation.json`, `artifacts/evidence/mcp-audit.json`, and `artifacts/evidence/cloud-cockroachdb.json`.
+This creates fresh UUID evaluation tenants, executes the ten database-backed checks, verifies the cosine vector plan, then audits deletion across every evaluation table. The source-bound cloud receipt passed 10/10 in 49.668 seconds on CockroachDB Cloud v26.2.5, with cleanup verified and zero rows remaining. Machine-readable receipts are `artifacts/evidence/api-cloud-tests.json`, `artifacts/evidence/safety-evaluation.json`, `artifacts/evidence/mcp-audit.json`, and `artifacts/evidence/cloud-cockroachdb.json`.
 
 ## Repository map
 

@@ -2,13 +2,12 @@
 
 ## Release-gate result
 
-- API/database: 14/14 automated tests passed both locally against v26.2.0 and live against CockroachDB Cloud v26.2.5; the cloud suite completed in 128.16 seconds.
+- API/database: 16/16 automated tests passed live against CockroachDB Cloud v26.2.5; the final machine-recorded cloud run completed in 226.511 seconds in `artifacts/evidence/api-cloud-tests.json`.
 - Judge interface: lint passed; 2/2 server-rendering and accessibility tests passed.
-- Failure scenario: all 7 assertions passed in `artifacts/evidence/local-demo.json`.
-- Live operational memory gate: 10/10 checks passed on CockroachDB Cloud in 30.395 seconds in `artifacts/evidence/safety-evaluation.json`; cleanup was verified across every evaluation table with zero rows remaining.
+- Live operational memory gate: 10/10 checks passed on CockroachDB Cloud in 49.668 seconds in `artifacts/evidence/safety-evaluation.json`; cleanup was verified across every evaluation table with zero rows remaining.
 - Managed MCP: RecallOps's client-enforced allowlist invoked all eight advertised read tools successfully; all five project-required checks passed in `artifacts/evidence/mcp-audit.json`, and the temporary API key was deleted. This is a verified client boundary, not a claim that the credential or server is intrinsically read-only.
-- Reproducible run: `operational-memory-gate-v3` completed successfully through the competition experiment ledger.
-- Remote verification: a clean GitHub Actions run is required again after the current hardening changes are published.
+- Source identity: all three live CockroachDB receipts bind to commit `66783df3ec0c612b6add7d76699592c30284b66e` and tree `26fa676cb58b2d77ee15d7137d2ece0d38cbbfb5`.
+- Remote verification: source commit `66783df3ec0c612b6add7d76699592c30284b66e` passed the public GitHub Actions release gate.
 
 ## What is exercised
 

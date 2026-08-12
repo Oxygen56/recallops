@@ -1,0 +1,87 @@
+{
+  "schema": "recallops.cloud-cockroachdb-evidence.v2",
+  "verifiedAt": "2026-08-12T14:09:30Z",
+  "sourceCommit": "66783df3ec0c612b6add7d76699592c30284b66e",
+  "sourceTree": "26fa676cb58b2d77ee15d7137d2ece0d38cbbfb5",
+  "cluster": {
+    "idSuffix": "788d66",
+    "name": "recallops-demo",
+    "plan": "BASIC",
+    "cloudProvider": "AWS",
+    "region": "us-east-1",
+    "state": "CREATED",
+    "networkVisibility": "PUBLIC",
+    "deleteProtection": "DISABLED",
+    "cockroachVersion": "v26.2.5"
+  },
+  "runtimeBoundary": {
+    "sqlUser": "recallops_runtime",
+    "adminMembership": false,
+    "ddlDenied": true,
+    "tableCount": 8,
+    "tables": [
+      "action_proposals",
+      "demo_request_quotas",
+      "evaluation_leases",
+      "evidence_outbox",
+      "incidents",
+      "memory_events",
+      "memory_records",
+      "tenants"
+    ],
+    "privileges": [
+      "CONNECT",
+      "DELETE",
+      "INSERT",
+      "SELECT",
+      "UPDATE",
+      "USAGE"
+    ],
+    "migrationUser": "recallops_migrator",
+    "migrationUserLogin": false,
+    "migrationUserMemberships": []
+  },
+  "verification": {
+    "remoteCi": {
+      "provider": "GitHub Actions",
+      "runId": 31603725455,
+      "url": "https://github.com/Oxygen56/recallops/actions/runs/31603725455",
+      "conclusion": "success"
+    },
+    "apiDatabaseTests": {
+      "receipt": "api-cloud-tests.json",
+      "receiptSha256": "029f94d70a7d99a85a634d22273953d3a1384400be5b5c32f5f0e28f8daa64be",
+      "passed": 16,
+      "total": 16,
+      "durationSeconds": 226.511,
+      "runner": "vitest-4.1.10",
+      "experimentRunId": "20260812-220511_final-cloud-16-source-bound"
+    },
+    "operationalMemoryGate": {
+      "receipt": "safety-evaluation.json",
+      "generatedAt": "2026-08-12T13:58:10.948Z",
+      "evaluationId": "9b88e0b7-5d16-46d6-affe-2999cd14545e",
+      "passed": 10,
+      "total": 10,
+      "runtimeMs": 49668,
+      "vectorIndex": "memory_semantic_idx:cosine-vector-search",
+      "cleanupVerified": true,
+      "remainingRowsAfterCleanup": 0
+    },
+    "managedMcp": {
+      "receipt": "mcp-audit.json",
+      "verifiedAt": "2026-08-12T13:59:38.798Z",
+      "mode": "client-enforced-read-only-allowlist",
+      "verified": true,
+      "availableReadOnlyTools": 8,
+      "requiredToolsPassed": 5,
+      "failedRequiredTools": [],
+      "temporaryApiKeyDeletedAfterAudit": true,
+      "remainingApiKeysAfterDeletion": 0
+    }
+  },
+  "coverageBoundary": {
+    "proved": "CockroachDB Cloud storage, request-bound idempotency, concurrency control, memory lifecycle, cosine vector execution, event integrity, cleanup, and client-enforced Managed MCP read-tool semantics",
+    "notProvedByThisReceipt": "AWS Lambda availability, Amazon S3 persistence, Amazon Bedrock invocation, public judge access, authentication, or CockroachDB row-level security"
+  }
+}

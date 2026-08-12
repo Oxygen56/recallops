@@ -21,7 +21,7 @@ CockroachDB is the persistent memory layer. Distributed Vector Indexing powers t
 ## Evidence
 
 - The full API/database suite passed live against CockroachDB Cloud v26.2.5.
-- The live operational memory gate passed 10/10 in 30.395 seconds and verified zero evaluation rows remained after cleanup.
+- The source-bound live operational memory gate passed 10/10 in 49.668 seconds and verified zero evaluation rows remained after cleanup.
 - RecallOps verified its client-enforced allowlist across all eight advertised Managed MCP read tools and all five project-required checks; the temporary audit key was deleted afterward.
 - The full server-rendered interface/accessibility suite passed.
 - The full end-to-end failure suite passed.
