@@ -16,6 +16,10 @@ export function canonicalJson(value: unknown): string {
   return JSON.stringify(stable(value));
 }
 
+export function requestHash(value: unknown): string {
+  return createHash("sha256").update(canonicalJson(value)).digest("hex");
+}
+
 export function eventHash(input: {
   tenantId: string;
   aggregateId: string;
@@ -23,6 +27,9 @@ export function eventHash(input: {
   eventType: string;
   payload: Record<string, unknown>;
   previousHash: string;
+  actor: string;
+  sessionId: string;
+  idempotencyKey: string;
 }): string {
-  return createHash("sha256").update(canonicalJson(input)).digest("hex");
+  return requestHash(input);
 }

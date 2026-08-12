@@ -13,6 +13,9 @@ build/
 !web/build/sites-vite-plugin.ts
 *.log
 artifacts/evidence/*.json
+!artifacts/evidence/safety-evaluation.json
+!artifacts/evidence/mcp-audit.json
+!artifacts/evidence/cloud-cockroachdb.json
 artifacts/evidence/*.txt
 !artifacts/evidence/.gitkeep
 !artifacts/evidence/local-demo.json

@@ -9,7 +9,7 @@ npm ci
 npm run dev
 ```
 
-The interface uses `NEXT_PUBLIC_API_BASE_URL` when configured and otherwise connects to `http://localhost:8787`.
+The interface uses `VITE_API_BASE_URL` at build time and otherwise connects to `http://localhost:8787` for local development. Public builds must set the variable to the verified Lambda URL.
 
 ## Quality gate
 

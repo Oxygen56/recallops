@@ -111,6 +111,8 @@ export class DecisionEngine {
   ) {}
 
   async process(command: IncidentCommand, idempotencyKey: string): Promise<DecisionBundle> {
+    const replay = await this.repository.replayIncident(command, idempotencyKey);
+    if (replay) return replay;
     const embeddingText = `${command.category} ${command.supplier} ${command.summary}`;
     const embedding = deterministicEmbedding(embeddingText);
     const similarMemories = await this.repository.retrieveMemories(command.tenantId, embedding, 4);

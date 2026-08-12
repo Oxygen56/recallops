@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8787";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787";
 const TENANT = "demo-logistics";
 
 type Memory = {
@@ -55,6 +55,27 @@ type Evidence = {
   databaseVersion: string;
 };
 
+type SafetyCheck = {
+  id: string;
+  label: string;
+  passed: boolean;
+  proof: string;
+};
+
+type SafetyEvaluation = {
+  schema: "recallops.safety-evaluation.v1";
+  evaluationId: string;
+  generatedAt: string;
+  runtimeMs: number;
+  passed: number;
+  total: number;
+  databaseVersion: string;
+  vectorIndex: string;
+  cleanupVerified: boolean;
+  remainingRowsAfterCleanup: number;
+  checks: SafetyCheck[];
+};
+
 type TimelineEvent = {
   eventId: string;
   version: number;
@@ -73,6 +94,26 @@ const defaultForm = {
   severity: 4,
   summary: "Carrier milestone is missing after six days of port congestion; customer promise is at risk.",
 };
+
+const defaultSafetyChecks: SafetyCheck[] = [
+  { id: "ambiguous-commit", label: "Lost-response recovery", passed: false, proof: "same command, same aggregate" },
+  { id: "zero-duplicates", label: "Zero duplicate rows", passed: false, proof: "database counts stay singular" },
+  { id: "concurrent-approval", label: "Concurrent approval", passed: false, proof: "one winner, explicit stale loser" },
+  { id: "compensation", label: "Compensating transition", passed: false, proof: "reversible state change" },
+  { id: "cross-session", label: "Cross-session continuity", passed: false, proof: "prior shift recalled" },
+  { id: "memory-lifecycle", label: "Revoke + restore lifecycle", passed: false, proof: "recall changes with status" },
+  { id: "expiry", label: "Expiry exclusion", passed: false, proof: "expired sentinel excluded" },
+  { id: "tenant-prefix", label: "Tenant-prefix retrieval", passed: false, proof: "perfect shadow match excluded" },
+  { id: "hash-chain", label: "Audit hash chain", passed: false, proof: "payload + metadata recomputed" },
+  { id: "vector-index", label: "Distributed cosine vector plan", passed: false, proof: "EXPLAIN shows vector search" },
+];
+
+const safetyGroups = [
+  { title: "Failure recovery", ids: ["ambiguous-commit", "zero-duplicates", "concurrent-approval"] },
+  { title: "Human control", ids: ["compensation"] },
+  { title: "Lifecycle", ids: ["cross-session", "memory-lifecycle", "expiry"] },
+  { title: "Isolation & integrity", ids: ["tenant-prefix", "hash-chain", "vector-index"] },
+];
 
 function makeKey(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -100,6 +141,7 @@ export default function Home() {
   const [form, setForm] = useState(defaultForm);
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [evidence, setEvidence] = useState<Evidence | null>(null);
+  const [evaluation, setEvaluation] = useState<SafetyEvaluation | null>(null);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState("Connecting to the memory ledger…");
@@ -153,11 +195,27 @@ export default function Home() {
       await readJson(await fetch(`${API_BASE}/v1/demo/reset`, { method: "POST" }));
       setBundle(null);
       setTimeline([]);
+      setEvaluation(null);
       setRecoveryProof(false);
       await refreshEvidence();
       setStatus("Three provenance-bearing memories are ready");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Reset failed safely");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runEvaluation() {
+    setBusy("evaluate");
+    setEvaluation(null);
+    setStatus("Attacking an isolated memory tenant with ten failure and governance checks…");
+    try {
+      const next = await readJson(await fetch(`${API_BASE}/v1/evaluations/safety`, { method: "POST" }));
+      setEvaluation(next);
+      setStatus(`${next.passed}/${next.total} operational memory checks passed in ${(next.runtimeMs / 1000).toFixed(1)}s`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Safety evaluation failed closed");
     } finally {
       setBusy(null);
     }
@@ -270,13 +328,15 @@ export default function Home() {
         body: JSON.stringify({ tenantId: TENANT }),
       }));
       await refreshEvidence();
-      setStatus(`${payload.published} tamper-evident receipt${payload.published === 1 ? "" : "s"} published via ${payload.sink}`);
+      setStatus(`${payload.published} encrypted decision receipt${payload.published === 1 ? "" : "s"} published via ${payload.sink}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Receipt publish failed safely");
     } finally {
       setBusy(null);
     }
   }
+
+  const displayedSafetyChecks = evaluation?.checks ?? defaultSafetyChecks;
 
   return (
     <main>
@@ -289,23 +349,33 @@ export default function Home() {
           <span className={apiOnline ? "pulse online" : "pulse"} />
           {status}
         </div>
-        <button className="quietButton" onClick={resetDemo} disabled={busy !== null}>
-          {busy === "reset" ? "Resetting…" : "Reset proof"}
+        <button
+          className="quietButton"
+          onClick={evaluation
+            ? resetDemo
+            : () => document.getElementById("safety-gate")?.scrollIntoView({ behavior: "smooth" })}
+          disabled={busy !== null}
+        >
+          {busy === "reset" ? "Resetting…" : evaluation ? "Reset proof" : "Run memory gate"}
         </button>
       </header>
 
       <section id="top" className="hero shell">
         <div className="heroCopy">
           <p className="eyebrow"><span>Supply-chain incident memory</span><span>Built for CockroachDB × AWS</span></p>
-          <h1>Remember the decision.<br /><em>Prove the recovery.</em></h1>
+          <h1>Never duplicate a retry.<br /><em>Prove every memory.</em></h1>
           <p className="lede">
-            An incident agent that can retrieve prior outcomes, survive lost responses, reject stale approvals,
-            forget revoked evidence, and explain every action across shifts.
+            One click attacks a fresh isolated application tenant in CockroachDB across lost results, racing approvals, revocation,
+            expiry, tenant-prefix retrieval, and audit integrity—then proves cleanup.
           </p>
+          <div className="heroActions">
+            <a className="heroPrimary" href="#safety-gate">Run the live 10-check memory gate ↓</a>
+            <a className="heroSecondary" href="#incident-proof">See incident recovery proof</a>
+          </div>
           <div className="proofStrip">
-            <div><strong>01</strong><span>One transactional memory</span></div>
-            <div><strong>02</strong><span>Zero duplicate actions</span></div>
-            <div><strong>03</strong><span>Every event hash-linked</span></div>
+            <div><strong>01</strong><span>No duplicate action on retry</span></div>
+            <div><strong>02</strong><span>One approval winner</span></div>
+            <div><strong>03</strong><span>Revoked memory never recalled</span></div>
           </div>
         </div>
         <div className="memoryOrb" aria-label="Live memory architecture">
@@ -329,7 +399,49 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="workspace shell">
+      <section id="safety-gate" className="evaluationSection shell">
+        <div className="sectionHeading">
+          <div><p className="kicker">Operational memory gate / live</p><h2>Break the memory before operations do</h2></div>
+          <p>A disposable application tenant is exercised, measured, and cleanup-audited. The score comes from live CockroachDB behavior—not a screenshot or a hard-coded checklist.</p>
+        </div>
+        <div className={`evaluationBoard ${evaluation && evaluation.passed === evaluation.total ? "evaluationPassed" : ""}`}>
+          <div className="evaluationScore">
+            <p className="monoLabel">
+              {busy === "evaluate"
+                ? "RUNNING / FRESH TENANT"
+                : evaluation
+                  ? `${evaluation.passed}/${evaluation.total} LIVE DATABASE CHECKS`
+                  : "NOT RUN / 10 CHECKS READY"}
+            </p>
+            <strong>{busy === "evaluate" ? "…" : evaluation ? evaluation.passed : "—"}<span>/{evaluation ? evaluation.total : "10"}</span></strong>
+            <p>{evaluation ? `${(evaluation.runtimeMs / 1000).toFixed(1)}s · ${evaluation.vectorIndex.replaceAll(":", " · ")}` : "Ten live checks · isolated tenant · cleanup is a hard gate"}</p>
+            {evaluation && <small className="evaluationReceipt">eval {evaluation.evaluationId.slice(0, 8)} · cleanup {evaluation.cleanupVerified && evaluation.remainingRowsAfterCleanup === 0 ? "verified / 0 rows" : "failed"}<br />{evaluation.databaseVersion.split(" (")[0]}</small>}
+            <button className="evaluationButton" onClick={runEvaluation} disabled={busy !== null || !apiOnline}>
+              {busy === "evaluate" ? "Running operational memory gate…" : evaluation ? "Run again on fresh state" : "Run 10-check memory gate"}
+            </button>
+          </div>
+          <div className="evaluationChecks" aria-live="polite">
+            {safetyGroups.map((group) => (
+              <section className="checkGroup" key={group.title}>
+                <h3>{group.title}</h3>
+                {displayedSafetyChecks
+                  .filter((check) => group.ids.includes(check.id))
+                  .map((check) => {
+                    const index = displayedSafetyChecks.findIndex((candidate) => candidate.id === check.id);
+                    return (
+                      <article className={evaluation ? (check.passed ? "checkPassed" : "checkFailed") : "checkWaiting"} key={check.id}>
+                        <span>{evaluation ? (check.passed ? "✓" : "!") : String(index + 1).padStart(2, "0")}</span>
+                        <div><strong>{check.label}</strong><p>{check.proof}</p></div>
+                      </article>
+                    );
+                  })}
+              </section>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="incident-proof" className="workspace shell">
         <div className="sectionHeading">
           <div><p className="kicker">Live proof / 01</p><h2>Open an incident</h2></div>
           <p>Submit once. We deliberately lose the response after commit, then recover the exact decision with the same key.</p>
@@ -424,7 +536,7 @@ export default function Home() {
                   <div><strong>v{event.version} · {event.eventType}</strong><p>{event.actor} / {event.sessionId}</p><code>{event.eventHash.slice(0, 20)}…</code></div>
                   <time>{formatTime(event.createdAt)}</time>
                 </article>
-              )) : <div className="darkEmpty">The immutable timeline will show creation, approval, revocation, restoration, and compensation events.</div>}
+              )) : <div className="darkEmpty">The hash-linked timeline will show creation, approval, revocation, restoration, and compensation events.</div>}
             </div>
           </div>
         </div>

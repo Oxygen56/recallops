@@ -14,11 +14,50 @@ for command_name in aws sam; do
   fi
 done
 if [[ -z "${DATABASE_URL:-}" ]]; then
-  echo "DATABASE_URL is required and must point to CockroachDB Cloud." >&2
+  echo "DATABASE_URL is required and must be the least-privileged CockroachDB Cloud runtime URL." >&2
   exit 2
 fi
 
+DATABASE_URL="$DATABASE_URL" node <<'NODE'
+const raw = process.env.DATABASE_URL;
+let url;
+try {
+  url = new URL(raw);
+} catch {
+  throw new Error("DATABASE_URL is not a valid URL.");
+}
+if (!new Set(["postgres:", "postgresql:"]).has(url.protocol)) {
+  throw new Error("DATABASE_URL must use postgresql://.");
+}
+if (!url.hostname.endsWith(".cockroachlabs.cloud")) {
+  throw new Error("DATABASE_URL must point to a CockroachDB Cloud hostname.");
+}
+if (decodeURIComponent(url.username) !== "recallops_runtime") {
+  throw new Error("DATABASE_URL must use the least-privileged recallops_runtime SQL user.");
+}
+if (url.pathname !== "/recallops") {
+  throw new Error("DATABASE_URL must select the recallops database.");
+}
+if (url.searchParams.get("sslmode") !== "verify-full") {
+  throw new Error("DATABASE_URL must set sslmode=verify-full.");
+}
+if (url.searchParams.has("sslrootcert")) {
+  throw new Error("Remove sslrootcert from DATABASE_URL; Lambda cannot use a local certificate path.");
+}
+if (decodeURIComponent(url.password).length < 20) {
+  throw new Error("DATABASE_URL password must contain at least 20 characters.");
+}
+NODE
+
 aws sts get-caller-identity >/dev/null
+available_concurrency="$(aws lambda get-account-settings \
+  --region "${AWS_REGION:-us-east-1}" \
+  --query 'AccountLimit.UnreservedConcurrentExecutions' \
+  --output text)"
+if [[ ! "$available_concurrency" =~ ^[0-9]+$ || "$available_concurrency" -lt 102 ]]; then
+  echo "AWS account cannot safely reserve two Lambda executions without reducing the 100 unreserved minimum." >&2
+  exit 2
+fi
 (
   cd "$project_dir/api"
   npm ci
@@ -36,4 +75,4 @@ sam deploy \
     "DatabaseUrl=$DATABASE_URL" \
     "McpClusterId=${MCP_CLUSTER_ID:-}" \
     "McpServiceAccountApiKey=${MCP_SERVICE_ACCOUNT_API_KEY:-}" \
-    "BedrockModelId=${BEDROCK_MODEL_ID:-amazon.nova-lite-v1:0}"
+    "BedrockModelId=${BEDROCK_MODEL_ID:-}"

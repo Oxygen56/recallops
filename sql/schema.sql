@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS memory_records (
 ) WITH (ttl_expiration_expression = 'expires_at');
 
 CREATE VECTOR INDEX IF NOT EXISTS memory_semantic_idx
-  ON memory_records (tenant_id, embedding);
+  ON memory_records (tenant_id, status, embedding vector_cosine_ops);
 
 CREATE INDEX IF NOT EXISTS memory_lifecycle_idx
   ON memory_records (tenant_id, status, expires_at);
@@ -111,6 +111,21 @@ CREATE TABLE IF NOT EXISTS evidence_outbox (
 
 CREATE INDEX IF NOT EXISTS evidence_outbox_pending_idx
   ON evidence_outbox (tenant_id, state, created_at);
+
+CREATE TABLE IF NOT EXISTS demo_request_quotas (
+  scope STRING NOT NULL,
+  hour_bucket STRING NOT NULL,
+  request_count INT NOT NULL DEFAULT 1,
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + INTERVAL '2 days',
+  PRIMARY KEY (scope, hour_bucket)
+) WITH (ttl_expiration_expression = 'expires_at');
+
+CREATE TABLE IF NOT EXISTS evaluation_leases (
+  lease_name STRING PRIMARY KEY,
+  holder_id UUID NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+) WITH (ttl_expiration_expression = 'expires_at');
 
 UPSERT INTO tenants (tenant_id, display_name)
 VALUES ('demo-logistics', 'Northstar Demo Logistics');

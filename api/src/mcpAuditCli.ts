@@ -8,3 +8,4 @@ const result = await runMcpAudit({
   apiKey: config.mcpApiKey ?? "",
 });
 console.log(JSON.stringify(result, null, 2));
+if (!result.verified) process.exitCode = 1;

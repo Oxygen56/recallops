@@ -1,14 +1,18 @@
 # Three-minute demo script
 
-Target runtime: 2:45. Spoken language: English. Show the live product, not slides, until the final architecture shot.
+Target runtime: 2:50. Spoken language: English. Show the live product, not slides, until the final architecture shot.
 
-## 0:00–0:18 — Problem
+## 0:00–0:24 — Problem and live gate
 
 “Supply-chain incidents cross shifts, systems, and retries. Chat history is not operational memory. RecallOps remembers the decision, proves recovery, and knows when evidence must be forgotten.”
 
 Show the hero and the five live evidence counters.
 
-## 0:18–0:58 — Ambiguous commit
+Open the operational memory gate and click **Run 10-check memory gate**. Keep the click and the real **RUNNING** state visible for two seconds, then use an explicit on-screen jump cut: **30.4 seconds later — same live run**. Do not shorten or replace the elapsed time shown in the receipt.
+
+“This is not a checklist screenshot. RecallOps attacks a fresh isolated application tenant in CockroachDB, returns per-check proof, verifies the real cosine vector plan, and audits cleanup to zero rows.” Hold on the 10/10 result, its 30.4-second elapsed time, database version, vector index, cleanup count, and short evaluation ID.
+
+## 0:24–1:00 — Ambiguous commit
 
 Keep “Inject response loss after commit” enabled and submit the default port-delay incident.
 
@@ -16,7 +20,7 @@ Keep “Inject response loss after commit” enabled and submit the default port
 
 Hold on the RECOVERED banner and the distributed-index ACTIVE badge.
 
-## 0:58–1:28 — Cross-session action safety
+## 1:00–1:30 — Cross-session action safety
 
 Approve the first proposed action.
 
@@ -24,22 +28,22 @@ Approve the first proposed action.
 
 Show the state change and the new timeline event.
 
-## 1:28–1:58 — Forgetting and audit
+## 1:30–2:00 — Forgetting and audit
 
 Revoke the admitted memory, then restore it.
 
 “Revocation removes evidence from future vector recall immediately. We preserve the tombstone and hash-linked lifecycle events, so forgetting never means rewriting history. TTL handles later physical cleanup.”
 
-## 1:58–2:25 — Sponsor stack
+## 2:00–2:28 — Sponsor stack
 
 Scroll to the architecture.
 
-“CockroachDB stores incident state, vector memory, revisions, events, and the outbox in one serializable contract. Distributed Vector Indexing powers recall. Managed MCP audits the live ledger read-only. AWS Lambda runs the API, S3 stores decision receipts, and Bedrock provides bounded reasoning with a deterministic fallback.”
+“CockroachDB stores incident state, vector memory, revisions, events, and the outbox in one serializable contract. Distributed Vector Indexing powers recall. Managed MCP audits the live ledger read-only. The implemented AWS path deploys the API to Lambda and receipts to S3; Bedrock is an optional bounded-reasoning adapter. This cut does not claim those AWS paths as live until their receipts are captured.”
 
-## 2:25–2:45 — Proof and close
+## 2:28–2:50 — Proof and close
 
 Show the test/evidence summary and return to the hero.
 
-“RecallOps passes ten database and API tests, two interface tests, and seven end-to-end failure assertions. Memory that knows when to act—and when to forget.”
+“RecallOps passes fourteen API and database tests, two interface tests, seven end-to-end failure assertions, and a live ten-check operational memory gate. Memory that knows when to act—and when to forget.”
 
 End card: RecallOps · public repository · live demo QR · Apache-2.0.

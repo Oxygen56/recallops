@@ -23,6 +23,9 @@ describe("deterministic evidence primitives", () => {
       version: 1,
       eventType: "incident.created",
       previousHash: "0".repeat(64),
+      actor: "operator-a",
+      sessionId: "session-a",
+      idempotencyKey: "key-a",
     };
     expect(eventHash({ ...base, payload: { b: 2, a: 1 } })).toBe(
       eventHash({ ...base, payload: { a: 1, b: 2 } }),

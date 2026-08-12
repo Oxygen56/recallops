@@ -7,11 +7,12 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && esbuild src/lambda.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/lambda.mjs",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && esbuild src/lambda.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/handler.cjs && node -e \"process.env.DATABASE_URL='postgresql://root@localhost:26257/recallops?sslmode=disable'; const lambda=require('./dist/handler.cjs'); if(typeof lambda.handler!=='function') throw new Error('Lambda handler export missing')\"",
     "dev": "tsx watch src/server.ts",
     "migrate": "tsx src/migrate.ts",
     "seed": "tsx src/seed.ts",
     "demo": "tsx src/demo.ts",
+    "evaluate": "tsx src/evaluate.ts",
     "mcp:audit": "tsx src/mcpAuditCli.ts",
     "test": "vitest run --reporter=verbose",
     "test:integration": "REQUIRE_DATABASE=1 vitest run test/integration.test.ts --reporter=verbose"

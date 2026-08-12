@@ -8,6 +8,7 @@ export interface Config {
   mcpClusterId?: string;
   mcpApiKey?: string;
   bedrockModelId?: string;
+  databasePoolMax: number;
 }
 
 export function loadConfig(): Config {
@@ -23,5 +24,6 @@ export function loadConfig(): Config {
     mcpClusterId: process.env.MCP_CLUSTER_ID || undefined,
     mcpApiKey: process.env.MCP_SERVICE_ACCOUNT_API_KEY || undefined,
     bedrockModelId: process.env.BEDROCK_MODEL_ID || undefined,
+    databasePoolMax: Math.min(4, Math.max(1, Number(process.env.DATABASE_POOL_MAX ?? 2))),
   };
 }

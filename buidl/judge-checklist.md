@@ -7,10 +7,11 @@
 - [x] Managed MCP client is implemented with a read-only allowlist.
 - [x] AWS Lambda, S3, and Bedrock deployment paths are implemented.
 - [x] Idempotency, concurrency, revocation, expiry, recovery, and cross-session behavior have automated tests.
+- [x] Judge UI runs a live ten-check operational memory gate and returns success only after cleanup is verified with zero rows.
 - [x] Architecture, evaluation, security, prior-work, data, model, and AI-assistance disclosures are written.
 - [x] Three-minute script and shot sequence are written.
-- [ ] CockroachDB Cloud cluster migrated and seeded.
-- [ ] Managed MCP live audit receipt captured.
+- [x] CockroachDB Cloud Basic cluster migrated, seeded, and verified with a least-privileged runtime user.
+- [x] Managed MCP live audit receipt captured; all advertised read tools passed and the temporary API key was deleted.
 - [ ] AWS deployment and S3 receipt verified.
 - [ ] Public judge URL points to the cloud API and works without entrant credentials.
 - [ ] Public GitHub repository verified, including license and clean secret scan.

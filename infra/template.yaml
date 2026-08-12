@@ -22,15 +22,18 @@ Parameters:
     Default: ""
   BedrockModelId:
     Type: String
-    Default: amazon.nova-lite-v1:0
+    Default: ""
+
+Conditions:
+  HasBedrockModel: !Not [!Equals [!Ref BedrockModelId, ""]]
 
 Globals:
   Function:
     Runtime: nodejs22.x
     Architectures: [arm64]
     MemorySize: 512
-    Timeout: 30
-    Tracing: Active
+    Timeout: 100
+    Tracing: PassThrough
     Environment:
       Variables:
         DATABASE_URL: !Ref DatabaseUrl
@@ -40,6 +43,7 @@ Globals:
         MCP_CLUSTER_ID: !Ref McpClusterId
         MCP_SERVICE_ACCOUNT_API_KEY: !Ref McpServiceAccountApiKey
         BEDROCK_MODEL_ID: !Ref BedrockModelId
+        DATABASE_POOL_MAX: "2"
 
 Resources:
   EvidenceBucket:
@@ -85,30 +89,37 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../api/dist/
-      Handler: lambda.handler
+      Handler: handler.handler
       ReservedConcurrentExecutions: 2
       FunctionUrlConfig:
         AuthType: NONE
-        Cors:
-          AllowOrigins: ["*"]
-          AllowMethods: [GET, POST]
-          AllowHeaders: [content-type, idempotency-key, x-recallops-fault]
-          MaxAge: 300
       Policies:
-        - S3WritePolicy:
-            BucketName: !Ref EvidenceBucket
         - Statement:
-            - Sid: InvokeBoundedReasoningModel
+            - Sid: WriteDecisionReceiptsOnly
               Effect: Allow
-              Action: bedrock:InvokeModel
-              Resource: !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}"
+              Action: s3:PutObject
+              Resource: !Sub "${EvidenceBucket.Arn}/decisions/${DemoTenantId}/*"
+        - !If
+          - HasBedrockModel
+          - Statement:
+              - Sid: InvokeBoundedReasoningModel
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}"
+          - !Ref AWS::NoValue
       Tags:
         Project: RecallOps
         Purpose: HackathonJudgeDemo
 
+  RecallOpsApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${RecallOpsApi}"
+      RetentionInDays: 30
+
 Outputs:
   ApiUrl:
-    Description: Public, rate-limited judge demo API URL
+    Description: Public judge demo API URL protected by tenant boundaries, database quotas, and concurrency caps
     Value: !GetAtt RecallOpsApiUrl.FunctionUrl
   EvidenceBucketName:
     Description: Private evidence receipt bucket

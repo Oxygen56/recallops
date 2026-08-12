@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
-import { eventHash } from "./hash.js";
+import { eventHash, requestHash } from "./hash.js";
 import { vectorLiteral } from "./embedding.js";
 import type {
   ActionProposal,
@@ -23,6 +23,20 @@ export class StaleRevisionError extends Error {
   ) {
     super(`stale revision: expected ${expectedRevision}, actual ${actualRevision}`);
     this.name = "StaleRevisionError";
+  }
+}
+
+export class IdempotencyConflictError extends Error {
+  constructor() {
+    super("idempotency key was already used for a different request");
+    this.name = "IdempotencyConflictError";
+  }
+}
+
+export class QuotaExceededError extends Error {
+  constructor(readonly scope: string, readonly limit: number) {
+    super(`hourly demo quota exceeded for ${scope}`);
+    this.name = "QuotaExceededError";
   }
 }
 
@@ -116,11 +130,12 @@ function timelineFromRow(row: QueryResultRow): TimelineEvent {
 export class CockroachRepository {
   readonly pool: Pool;
 
-  constructor(databaseUrl: string) {
+  constructor(databaseUrl: string, poolMax = Math.min(4, Math.max(1, Number(process.env.DATABASE_POOL_MAX ?? 2)))) {
     this.pool = new Pool({
       connectionString: databaseUrl,
       application_name: "recallops-agent-api",
-      max: 10,
+      max: poolMax,
+      maxLifetimeSeconds: 300,
       connectionTimeoutMillis: 8_000,
       idleTimeoutMillis: 30_000,
     });
@@ -163,19 +178,30 @@ export class CockroachRepository {
     embedding: number[],
     limit = 4,
   ): Promise<MemoryRecord[]> {
-    const result = await this.pool.query(
-      `SELECT tenant_id, memory_id, incident_id, kind, content, provenance, status,
-              expires_at, revision, created_at, updated_at,
-              embedding <=> $2::VECTOR AS distance
-         FROM memory_records
-        WHERE tenant_id = $1
-          AND status = 'active'
-          AND (expires_at IS NULL OR expires_at > now())
-        ORDER BY embedding <=> $2::VECTOR
-        LIMIT $3`,
-      [tenantId, vectorLiteral(embedding), limit],
-    );
-    return result.rows.map(memoryFromRow);
+    let candidateLimit = Math.max(limit * 16, 64);
+    const maximumCandidateLimit = 4096;
+    while (true) {
+      const result = await this.pool.query(
+        `WITH candidates AS MATERIALIZED (
+           SELECT tenant_id, memory_id, incident_id, kind, content, provenance, status,
+                  expires_at, revision, created_at, updated_at,
+                  embedding <=> $2::VECTOR AS distance
+             FROM memory_records@memory_semantic_idx
+            WHERE tenant_id = $1 AND status = 'active'
+            ORDER BY embedding <=> $2::VECTOR
+            LIMIT $3
+         )
+         SELECT *, count(*) OVER () AS unexpired_candidates
+           FROM candidates
+          WHERE expires_at IS NULL OR expires_at > now()
+          ORDER BY distance
+          LIMIT $4`,
+        [tenantId, vectorLiteral(embedding), candidateLimit, limit],
+      );
+      const memories = result.rows.map(memoryFromRow);
+      if (memories.length >= limit || candidateLimit >= maximumCandidateLimit) return memories;
+      candidateLimit = Math.min(candidateLimit * 2, maximumCandidateLimit);
+    }
   }
 
   async createIncident(
@@ -184,7 +210,12 @@ export class CockroachRepository {
     embedding: number[],
     draft: DecisionDraft,
   ): Promise<DecisionBundle> {
-    const replay = await this.loadByIdempotencyKey(command.tenantId, idempotencyKey);
+    const commandFingerprint = requestHash(command);
+    const replay = await this.loadByIdempotencyKey(
+      command.tenantId,
+      idempotencyKey,
+      commandFingerprint,
+    );
     if (replay) return replay;
 
     try {
@@ -192,6 +223,7 @@ export class CockroachRepository {
         const duplicate = await this.loadByIdempotencyKey(
           command.tenantId,
           idempotencyKey,
+          commandFingerprint,
           client,
         );
         if (duplicate) return duplicate;
@@ -264,6 +296,7 @@ export class CockroachRepository {
           similarMemoryIds: draft.similarMemories.map((item) => item.memoryId),
           synopsis: draft.synopsis,
           embeddingProvider: draft.provenance.embeddingProvider,
+          requestFingerprint: commandFingerprint,
         };
         const hash = eventHash({
           tenantId: command.tenantId,
@@ -272,6 +305,9 @@ export class CockroachRepository {
           eventType: "incident.created",
           payload,
           previousHash: ZERO_HASH,
+          actor: command.actor,
+          sessionId: command.sessionId,
+          idempotencyKey,
         });
         const eventResult = await client.query(
           `INSERT INTO memory_events
@@ -323,7 +359,11 @@ export class CockroachRepository {
       });
     } catch (error) {
       if ((error as { code?: string }).code === "23505") {
-        const reconciled = await this.loadByIdempotencyKey(command.tenantId, idempotencyKey);
+        const reconciled = await this.loadByIdempotencyKey(
+          command.tenantId,
+          idempotencyKey,
+          commandFingerprint,
+        );
         if (reconciled) return reconciled;
       }
       throw error;
@@ -333,6 +373,7 @@ export class CockroachRepository {
   async loadByIdempotencyKey(
     tenantId: string,
     idempotencyKey: string,
+    expectedRequestFingerprint: string,
     client: PoolClient | Pool = this.pool,
   ): Promise<DecisionBundle | null> {
     const eventResult = await client.query(
@@ -342,8 +383,16 @@ export class CockroachRepository {
       [tenantId, idempotencyKey],
     );
     if (eventResult.rowCount === 0) return null;
+    const payload = eventResult.rows[0].payload as Record<string, unknown>;
+    if (payload.requestFingerprint !== expectedRequestFingerprint) {
+      throw new IdempotencyConflictError();
+    }
     const aggregateId = eventResult.rows[0].aggregate_id;
-    return this.loadBundle(tenantId, aggregateId, true, client, eventResult.rows[0].payload);
+    return this.loadBundle(tenantId, aggregateId, true, client, payload);
+  }
+
+  async replayIncident(command: IncidentCommand, idempotencyKey: string): Promise<DecisionBundle | null> {
+    return this.loadByIdempotencyKey(command.tenantId, idempotencyKey, requestHash(command));
   }
 
   private async loadBundle(
@@ -440,6 +489,9 @@ export class CockroachRepository {
       eventType: input.eventType,
       payload: input.payload,
       previousHash,
+      actor: input.actor,
+      sessionId: input.sessionId,
+      idempotencyKey: input.idempotencyKey,
     });
     const inserted = await client.query(
       `INSERT INTO memory_events
@@ -463,6 +515,70 @@ export class CockroachRepository {
     return { eventId: inserted.rows[0].event_id, version, hash, previousHash };
   }
 
+  private async loadActionTransitionReplay(
+    input: {
+      tenantId: string;
+      actionId: string;
+      expectedRevision: number;
+      targetState: "approved" | "compensated" | "rejected";
+      actor: string;
+      sessionId: string;
+      idempotencyKey: string;
+    },
+    client: PoolClient | Pool = this.pool,
+  ): Promise<ActionProposal | null> {
+    const replay = await client.query(
+      `SELECT event_type, payload FROM memory_events
+        WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [input.tenantId, input.idempotencyKey],
+    );
+    if (replay.rowCount === 0) return null;
+    const eventType = replay.rows[0].event_type;
+    const payload = replay.rows[0].payload as Record<string, unknown>;
+    const fingerprint = requestHash({
+      tenantId: input.tenantId,
+      actionId: input.actionId,
+      expectedRevision: input.expectedRevision,
+      targetState: input.targetState,
+      actor: input.actor,
+      sessionId: input.sessionId,
+    });
+    if (
+      eventType !== `action.${input.targetState}` ||
+      payload.actionId !== input.actionId ||
+      payload.toState !== input.targetState ||
+      Number(payload.requestExpectedRevision ?? payload.revision) !== input.expectedRevision ||
+      payload.requestFingerprint !== fingerprint
+    ) {
+      throw new IdempotencyConflictError();
+    }
+    if (payload.resultAction && typeof payload.resultAction === "object") {
+      return payload.resultAction as ActionProposal;
+    }
+    const current = await client.query(
+      "SELECT * FROM action_proposals WHERE tenant_id = $1 AND action_id = $2",
+      [input.tenantId, input.actionId],
+    );
+    if (current.rowCount === 0) throw new NotFoundError("action");
+    return {
+      ...actionFromRow(current.rows[0]),
+      state: input.targetState,
+      revision: Number(payload.revision),
+    };
+  }
+
+  async replayActionTransition(input: {
+    tenantId: string;
+    actionId: string;
+    expectedRevision: number;
+    targetState: "approved" | "compensated" | "rejected";
+    actor: string;
+    sessionId: string;
+    idempotencyKey: string;
+  }): Promise<ActionProposal | null> {
+    return this.loadActionTransitionReplay(input);
+  }
+
   async transitionAction(input: {
     tenantId: string;
     actionId: string;
@@ -472,20 +588,13 @@ export class CockroachRepository {
     sessionId: string;
     idempotencyKey: string;
   }): Promise<ActionProposal> {
-    const replay = await this.pool.query(
-      "SELECT payload FROM memory_events WHERE tenant_id = $1 AND idempotency_key = $2",
-      [input.tenantId, input.idempotencyKey],
-    );
-    if ((replay.rowCount ?? 0) > 0) {
-      const existing = await this.pool.query(
-        "SELECT * FROM action_proposals WHERE tenant_id = $1 AND action_id = $2",
-        [input.tenantId, input.actionId],
-      );
-      if (existing.rowCount === 0) throw new NotFoundError("action");
-      return actionFromRow(existing.rows[0]);
-    }
+    const replay = await this.loadActionTransitionReplay(input);
+    if (replay) return replay;
 
-    return this.withSerializable(async (client) => {
+    try {
+      return await this.withSerializable(async (client) => {
+      const transactionReplay = await this.loadActionTransitionReplay(input, client);
+      if (transactionReplay) return transactionReplay;
       const before = await client.query(
         "SELECT * FROM action_proposals WHERE tenant_id = $1 AND action_id = $2 FOR UPDATE",
         [input.tenantId, input.actionId],
@@ -495,8 +604,8 @@ export class CockroachRepository {
       if (current.revision !== input.expectedRevision) {
         throw new StaleRevisionError(input.expectedRevision, current.revision);
       }
-      if (input.targetState === "approved" && current.state !== "proposed") {
-        throw new Error(`cannot approve action from state ${current.state}`);
+      if (["approved", "rejected"].includes(input.targetState) && current.state !== "proposed") {
+        throw new Error(`cannot ${input.targetState === "approved" ? "approve" : "reject"} action from state ${current.state}`);
       }
       if (input.targetState === "compensated" && !["approved", "executed"].includes(current.state)) {
         throw new Error(`cannot compensate action from state ${current.state}`);
@@ -522,7 +631,17 @@ export class CockroachRepository {
         actionType: action.actionType,
         fromState: current.state,
         toState: action.state,
+        requestExpectedRevision: input.expectedRevision,
         revision: action.revision,
+        resultAction: action,
+        requestFingerprint: requestHash({
+          tenantId: input.tenantId,
+          actionId: input.actionId,
+          expectedRevision: input.expectedRevision,
+          targetState: input.targetState,
+          actor: input.actor,
+          sessionId: input.sessionId,
+        }),
       };
       const event = await this.appendIncidentEvent(client, {
         tenantId: input.tenantId,
@@ -556,7 +675,15 @@ export class CockroachRepository {
         ],
       );
       return action;
-    });
+      });
+    } catch (error) {
+      const committedReplay = await this.loadActionTransitionReplay(input).catch((replayError) => {
+        if (replayError instanceof IdempotencyConflictError) throw replayError;
+        return null;
+      });
+      if (committedReplay) return committedReplay;
+      throw error;
+    }
   }
 
   async setMemoryStatus(input: {
@@ -568,7 +695,48 @@ export class CockroachRepository {
     idempotencyKey: string;
     reason: string;
   }): Promise<MemoryRecord> {
-    return this.withSerializable(async (client) => {
+    const loadReplay = async (client: PoolClient | Pool = this.pool): Promise<MemoryRecord | null> => {
+      const replay = await client.query(
+        `SELECT event_type, payload FROM memory_events
+          WHERE tenant_id = $1 AND idempotency_key = $2`,
+        [input.tenantId, input.idempotencyKey],
+      );
+      if (replay.rowCount === 0) return null;
+      const payload = replay.rows[0].payload as Record<string, unknown>;
+      const expectedEventType = input.status === "revoked" ? "memory.revoked" : "memory.restored";
+      const fingerprint = requestHash({
+        tenantId: input.tenantId,
+        memoryId: input.memoryId,
+        status: input.status,
+        actor: input.actor,
+        sessionId: input.sessionId,
+        reason: input.reason,
+      });
+      if (
+        replay.rows[0].event_type !== expectedEventType ||
+        payload.memoryId !== input.memoryId ||
+        payload.toStatus !== input.status ||
+        payload.requestFingerprint !== fingerprint
+      ) {
+        throw new IdempotencyConflictError();
+      }
+      if (payload.resultMemory && typeof payload.resultMemory === "object") {
+        return payload.resultMemory as MemoryRecord;
+      }
+      const current = await client.query(
+        "SELECT * FROM memory_records WHERE tenant_id = $1 AND memory_id = $2",
+        [input.tenantId, input.memoryId],
+      );
+      if (current.rowCount === 0) throw new NotFoundError("memory");
+      return { ...memoryFromRow(current.rows[0]), status: input.status, revision: Number(payload.revision) };
+    };
+
+    const replay = await loadReplay();
+    if (replay) return replay;
+    try {
+      return await this.withSerializable(async (client) => {
+      const transactionReplay = await loadReplay(client);
+      if (transactionReplay) return transactionReplay;
       const before = await client.query(
         "SELECT * FROM memory_records WHERE tenant_id = $1 AND memory_id = $2 FOR UPDATE",
         [input.tenantId, input.memoryId],
@@ -595,13 +763,71 @@ export class CockroachRepository {
           toStatus: input.status,
           reason: input.reason,
           revision: memory.revision,
+          resultMemory: memory,
+          requestFingerprint: requestHash({
+            tenantId: input.tenantId,
+            memoryId: input.memoryId,
+            status: input.status,
+            actor: input.actor,
+            sessionId: input.sessionId,
+            reason: input.reason,
+          }),
         },
         actor: input.actor,
         sessionId: input.sessionId,
         idempotencyKey: input.idempotencyKey,
       });
       return memory;
+      });
+    } catch (error) {
+      const committedReplay = await loadReplay().catch((replayError) => {
+        if (replayError instanceof IdempotencyConflictError) throw replayError;
+        return null;
+      });
+      if (committedReplay) return committedReplay;
+      throw error;
+    }
+  }
+
+  async replayMemoryStatus(input: {
+    tenantId: string;
+    memoryId: string;
+    status: "active" | "revoked";
+    actor: string;
+    sessionId: string;
+    idempotencyKey: string;
+    reason: string;
+  }): Promise<MemoryRecord | null> {
+    const replay = await this.pool.query(
+      `SELECT event_type, payload FROM memory_events
+        WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [input.tenantId, input.idempotencyKey],
+    );
+    if (replay.rowCount === 0) return null;
+    const payload = replay.rows[0].payload as Record<string, unknown>;
+    const fingerprint = requestHash({
+      tenantId: input.tenantId,
+      memoryId: input.memoryId,
+      status: input.status,
+      actor: input.actor,
+      sessionId: input.sessionId,
+      reason: input.reason,
     });
+    if (
+      replay.rows[0].event_type !== (input.status === "revoked" ? "memory.revoked" : "memory.restored") ||
+      payload.memoryId !== input.memoryId ||
+      payload.toStatus !== input.status ||
+      payload.requestFingerprint !== fingerprint
+    ) {
+      throw new IdempotencyConflictError();
+    }
+    if (payload.resultMemory && typeof payload.resultMemory === "object") return payload.resultMemory as MemoryRecord;
+    const current = await this.pool.query(
+      "SELECT * FROM memory_records WHERE tenant_id = $1 AND memory_id = $2",
+      [input.tenantId, input.memoryId],
+    );
+    if (current.rowCount === 0) throw new NotFoundError("memory");
+    return { ...memoryFromRow(current.rows[0]), status: input.status, revision: Number(payload.revision) };
   }
 
   async timeline(tenantId: string, incidentId: string): Promise<TimelineEvent[]> {
@@ -643,6 +869,96 @@ export class CockroachRepository {
       vectorIndex: indexNames.includes("memory_semantic_idx") ? "memory_semantic_idx:active" : "missing",
       databaseVersion: version.rows[0].version,
     };
+  }
+
+  async aggregateEvidence(tenantId: string, incidentId: string): Promise<{
+    incidents: number;
+    memories: number;
+    actions: number;
+    createdEvents: number;
+    approvedEvents: number;
+  }> {
+    const result = await this.pool.query(
+      `SELECT
+         (SELECT count(*) FROM incidents WHERE tenant_id = $1 AND incident_id = $2) AS incidents,
+         (SELECT count(*) FROM memory_records WHERE tenant_id = $1 AND incident_id = $2) AS memories,
+         (SELECT count(*) FROM action_proposals WHERE tenant_id = $1 AND incident_id = $2) AS actions,
+         (SELECT count(*) FROM memory_events WHERE tenant_id = $1 AND aggregate_id = $2
+           AND event_type = 'incident.created') AS created_events,
+         (SELECT count(*) FROM memory_events WHERE tenant_id = $1 AND aggregate_id = $2
+           AND event_type = 'action.approved') AS approved_events`,
+      [tenantId, incidentId],
+    );
+    const row = result.rows[0];
+    return {
+      incidents: Number(row.incidents),
+      memories: Number(row.memories),
+      actions: Number(row.actions),
+      createdEvents: Number(row.created_events),
+      approvedEvents: Number(row.approved_events),
+    };
+  }
+
+  async vectorIndexPlan(tenantId: string, embedding: number[]): Promise<{
+    plan: string;
+    usesVectorIndex: boolean;
+    cosineOpclass: boolean;
+  }> {
+    const [explain, create] = await Promise.all([
+      this.pool.query(
+        `EXPLAIN SELECT tenant_id, memory_id, embedding <=> $2::VECTOR AS distance
+           FROM memory_records@memory_semantic_idx
+          WHERE tenant_id = $1 AND status = 'active'
+          ORDER BY embedding <=> $2::VECTOR
+          LIMIT 4`,
+        [tenantId, vectorLiteral(embedding)],
+      ),
+      this.pool.query("SHOW CREATE TABLE memory_records"),
+    ]);
+    const plan = explain.rows.map((row) => String(row.info ?? Object.values(row)[0])).join("\n");
+    const definition = String(create.rows[0]?.create_statement ?? "");
+    return {
+      plan,
+      usesVectorIndex: /vector search/i.test(plan) && /memory_records@memory_semantic_idx/i.test(plan),
+      cosineOpclass: /memory_semantic_idx[^\n]*vector_cosine_ops/i.test(definition),
+    };
+  }
+
+  async acquireDemoQuota(scope: string, limit: number): Promise<void> {
+    if (!/^[a-z-]{3,40}$/.test(scope) || limit < 1) throw new Error("invalid quota scope");
+    const hourBucket = new Date().toISOString().slice(0, 13);
+    const result = await this.pool.query(
+      `INSERT INTO demo_request_quotas (scope, hour_bucket, request_count)
+       VALUES ($1, $2, 1)
+       ON CONFLICT (scope, hour_bucket)
+       DO UPDATE SET request_count = least(demo_request_quotas.request_count + 1, $3)
+       RETURNING request_count`,
+      [scope, hourBucket, limit + 1],
+    );
+    const count = Number(result.rows[0].request_count);
+    if (count > limit) throw new QuotaExceededError(scope, limit);
+  }
+
+  async acquireEvaluationLease(holderId: string, leaseSeconds = 120): Promise<boolean> {
+    const result = await this.pool.query(
+      `INSERT INTO evaluation_leases (lease_name, holder_id, expires_at)
+       VALUES ('operational-memory-gate', $1::UUID, now() + ($2::INT * INTERVAL '1 second'))
+       ON CONFLICT (lease_name) DO UPDATE
+         SET holder_id = excluded.holder_id,
+             expires_at = excluded.expires_at,
+             updated_at = now()
+       WHERE evaluation_leases.expires_at < now()
+       RETURNING holder_id`,
+      [holderId, leaseSeconds],
+    );
+    return result.rowCount === 1 && result.rows[0].holder_id === holderId;
+  }
+
+  async releaseEvaluationLease(holderId: string): Promise<void> {
+    await this.pool.query(
+      "DELETE FROM evaluation_leases WHERE lease_name = 'operational-memory-gate' AND holder_id = $1::UUID",
+      [holderId],
+    );
   }
 
   async pendingOutbox(tenantId: string, limit = 20): Promise<OutboxRecord[]> {
@@ -716,6 +1032,81 @@ export class CockroachRepository {
       await client.query("DELETE FROM incidents WHERE tenant_id = $1", [tenantId]);
       return undefined;
     });
+  }
+
+  async deleteEvaluationTenant(tenantId: string): Promise<void> {
+    if (!/^eval-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:-shadow)?$/.test(tenantId)) {
+      throw new Error("cleanup is restricted to isolated evaluation tenants");
+    }
+    await this.withSerializable(async (client) => {
+      await client.query("DELETE FROM evidence_outbox WHERE tenant_id = $1", [tenantId]);
+      await client.query("DELETE FROM memory_events WHERE tenant_id = $1", [tenantId]);
+      await client.query("DELETE FROM action_proposals WHERE tenant_id = $1", [tenantId]);
+      await client.query("DELETE FROM memory_records WHERE tenant_id = $1", [tenantId]);
+      await client.query("DELETE FROM incidents WHERE tenant_id = $1", [tenantId]);
+      await client.query("DELETE FROM tenants WHERE tenant_id = $1", [tenantId]);
+      return undefined;
+    });
+  }
+
+  async deleteEvaluationTenants(tenantIds: string[]): Promise<void> {
+    if (
+      tenantIds.length === 0 ||
+      tenantIds.some((tenantId) => !/^eval-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:-shadow)?$/.test(tenantId))
+    ) {
+      throw new Error("cleanup is restricted to isolated evaluation tenants");
+    }
+    await this.withSerializable(async (client) => {
+      for (const table of ["evidence_outbox", "memory_events", "action_proposals", "memory_records", "incidents", "tenants"]) {
+        await client.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::STRING[])`, [tenantIds]);
+      }
+      return undefined;
+    });
+  }
+
+  async deleteStaleEvaluationTenants(olderThanMinutes: number): Promise<number> {
+    if (!Number.isInteger(olderThanMinutes) || olderThanMinutes < 5 || olderThanMinutes > 1440) {
+      throw new Error("stale evaluation cleanup window must be 5-1440 minutes");
+    }
+    const result = await this.pool.query(
+      `SELECT DISTINCT regexp_replace(tenant_id, '-shadow$', '') AS tenant_id
+         FROM (
+           SELECT tenant_id, min(created_at) AS created_at FROM tenants GROUP BY tenant_id
+           UNION ALL SELECT tenant_id, min(created_at) FROM incidents GROUP BY tenant_id
+           UNION ALL SELECT tenant_id, min(created_at) FROM memory_records GROUP BY tenant_id
+           UNION ALL SELECT tenant_id, min(created_at) FROM action_proposals GROUP BY tenant_id
+           UNION ALL SELECT tenant_id, min(created_at) FROM memory_events GROUP BY tenant_id
+           UNION ALL SELECT tenant_id, min(created_at) FROM evidence_outbox GROUP BY tenant_id
+         ) AS evaluation_rows
+        WHERE tenant_id ~ '^eval-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:-shadow)?$'
+          AND created_at < now() - ($1::INT * INTERVAL '1 minute')`,
+      [olderThanMinutes],
+    );
+    const tenants = result.rows.map((row) => String(row.tenant_id));
+    for (const tenantId of tenants) {
+      await this.deleteEvaluationTenants([tenantId, `${tenantId}-shadow`]);
+    }
+    return tenants.length;
+  }
+
+  async evaluationRows(tenantIds: string[]): Promise<number> {
+    if (
+      tenantIds.length === 0 ||
+      tenantIds.some((tenantId) => !/^eval-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:-shadow)?$/.test(tenantId))
+    ) {
+      throw new Error("evaluation row audit requires evaluation tenants");
+    }
+    const result = await this.pool.query(
+      `SELECT
+         (SELECT count(*) FROM tenants WHERE tenant_id = ANY($1::STRING[])) +
+         (SELECT count(*) FROM incidents WHERE tenant_id = ANY($1::STRING[])) +
+         (SELECT count(*) FROM memory_records WHERE tenant_id = ANY($1::STRING[])) +
+         (SELECT count(*) FROM action_proposals WHERE tenant_id = ANY($1::STRING[])) +
+         (SELECT count(*) FROM memory_events WHERE tenant_id = ANY($1::STRING[])) +
+         (SELECT count(*) FROM evidence_outbox WHERE tenant_id = ANY($1::STRING[])) AS rows`,
+      [tenantIds],
+    );
+    return Number(result.rows[0].rows);
   }
 
   makeIdempotencyKey(prefix: string): string {

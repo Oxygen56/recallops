@@ -1,15 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
+import { createApp } from "../src/app.js";
 import { seedDemo } from "../src/demoData.js";
 import { deterministicEmbedding } from "../src/embedding.js";
 import { DecisionEngine } from "../src/engine.js";
-import { CockroachRepository, StaleRevisionError } from "../src/repository.js";
+import {
+  CockroachRepository,
+  IdempotencyConflictError,
+  QuotaExceededError,
+  StaleRevisionError,
+} from "../src/repository.js";
 import { ReceiptPublisher } from "../src/receipts.js";
+import { runSafetyEvaluation } from "../src/safetyEval.js";
 
 const config = loadConfig();
 const repository = new CockroachRepository(config.databaseUrl);
 const engine = new DecisionEngine(repository);
+const { app: httpApp, repository: httpRepository } = createApp(config);
 const tenantId = config.demoTenantId;
 
 describe("CockroachDB incident memory integration", () => {
@@ -21,6 +29,7 @@ describe("CockroachDB incident memory integration", () => {
 
   afterAll(async () => {
     await repository.close();
+    await httpRepository.close();
   });
 
   it("uses the distributed vector index and excludes expired memory", async () => {
@@ -61,6 +70,8 @@ describe("CockroachDB incident memory integration", () => {
       first.actions.map((action) => action.actionId),
     );
     expect(replay.idempotentReplay).toBe(true);
+    await expect(engine.process({ ...command, summary: "A different command reuses the same key." }, idempotencyKey))
+      .rejects.toBeInstanceOf(IdempotencyConflictError);
 
     const nextSession = await engine.process(
       {
@@ -73,6 +84,82 @@ describe("CockroachDB incident memory integration", () => {
       `test-cross-session-${randomUUID()}`,
     );
     expect(nextSession.similarMemories.some((memory) => memory.memoryId === first.memory.memoryId)).toBe(true);
+  });
+
+  it("returns an HTTP 503 after commit and reconciles the replay without duplicate rows", async () => {
+    const idempotencyKey = `http-fault-${randomUUID()}`;
+    const command = {
+      tenantId,
+      supplier: "HarborLine Logistics",
+      shipmentRef: `HTTP-FAULT-${randomUUID().slice(0, 8)}`,
+      category: "delay",
+      severity: 4,
+      summary: "The API commits the incident, loses the response, and must reconcile the retry safely.",
+      sessionId: "http-fault-session",
+      actor: "http-fault-operator",
+    };
+    const failedResponse = await httpApp.request("/v1/incidents", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey,
+        "X-RecallOps-Fault": "after-commit",
+      },
+      body: JSON.stringify(command),
+    });
+    expect(failedResponse.status).toBe(503);
+    const failed = await failedResponse.json() as { committedIncidentId: string };
+
+    const replayResponse = await httpApp.request("/v1/incidents", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify(command),
+    });
+    expect(replayResponse.status).toBe(200);
+    const replay = await replayResponse.json() as {
+      idempotentReplay: boolean;
+      incident: { incidentId: string };
+      actions: unknown[];
+    };
+    expect(replay.idempotentReplay).toBe(true);
+    expect(replay.incident.incidentId).toBe(failed.committedIncidentId);
+    const rows = await repository.aggregateEvidence(tenantId, replay.incident.incidentId);
+    expect(rows).toMatchObject({
+      incidents: 1,
+      memories: 1,
+      actions: replay.actions.length,
+      createdEvents: 1,
+    });
+  });
+
+  it("enforces the public demo tenant boundary and database-backed hourly quota", async () => {
+    const forbidden = await httpApp.request("/v1/incidents?tenantId=another-tenant");
+    expect(forbidden.status).toBe(403);
+
+    const suffix = randomUUID().replaceAll(/[^a-f]/g, "a").slice(0, 8);
+    const scope = `test-quota-${suffix}`;
+    await repository.acquireDemoQuota(scope, 2);
+    await repository.acquireDemoQuota(scope, 2);
+    await expect(repository.acquireDemoQuota(scope, 2)).rejects.toBeInstanceOf(QuotaExceededError);
+  });
+
+  it("serializes live safety gates with a database lease across repository instances", async () => {
+    const otherRepository = new CockroachRepository(config.databaseUrl, 1);
+    const firstHolder = randomUUID();
+    const secondHolder = randomUUID();
+    try {
+      expect(await repository.acquireEvaluationLease(firstHolder)).toBe(true);
+      expect(await otherRepository.acquireEvaluationLease(secondHolder)).toBe(false);
+      await repository.releaseEvaluationLease(firstHolder);
+      expect(await otherRepository.acquireEvaluationLease(secondHolder)).toBe(true);
+    } finally {
+      await repository.releaseEvaluationLease(firstHolder);
+      await otherRepository.releaseEvaluationLease(secondHolder);
+      await otherRepository.close();
+    }
   });
 
   it("allows only one concurrent transition at a known revision", async () => {
@@ -114,6 +201,42 @@ describe("CockroachDB incident memory integration", () => {
     }
   });
 
+  it("reconciles concurrent identical action retries and rejects key reuse", async () => {
+    const created = await engine.process({
+      tenantId,
+      supplier: "HarborLine Logistics",
+      shipmentRef: "ACTION-IDEMPOTENCY-1",
+      category: "delay",
+      severity: 3,
+      summary: "The same approval request is retried concurrently after a client timeout.",
+      sessionId: "action-retry-session",
+      actor: "operations-lead",
+    }, `test-action-parent-${randomUUID()}`);
+    const action = created.actions[0];
+    const key = `test-action-identical-${randomUUID()}`;
+    const request = {
+      tenantId,
+      actionId: action.actionId,
+      expectedRevision: action.revision,
+      targetState: "approved" as const,
+      actor: "operations-lead",
+      sessionId: "action-retry-session",
+      idempotencyKey: key,
+    };
+    const identical = await Promise.all([
+      repository.transitionAction(request),
+      repository.transitionAction(request),
+    ]);
+    expect(identical[0]).toEqual(identical[1]);
+    expect(identical[0]).toMatchObject({ state: "approved", revision: 2 });
+    const counts = await repository.aggregateEvidence(tenantId, created.incident.incidentId);
+    expect(counts.approvedEvents).toBe(1);
+    await expect(repository.transitionAction({
+      ...request,
+      actionId: created.actions[1].actionId,
+    })).rejects.toBeInstanceOf(IdempotencyConflictError);
+  });
+
   it("revokes memory from retrieval and can restore it with an audit event", async () => {
     const created = await engine.process(
       {
@@ -128,15 +251,21 @@ describe("CockroachDB incident memory integration", () => {
       },
       `test-lifecycle-${randomUUID()}`,
     );
-    await repository.setMemoryStatus({
+    const revokeKey = `test-revoke-${randomUUID()}`;
+    const revokeRequest = {
       tenantId,
       memoryId: created.memory.memoryId,
       status: "revoked",
       actor: "quality-lead",
       sessionId: "lifecycle-b",
-      idempotencyKey: `test-revoke-${randomUUID()}`,
+      idempotencyKey: revokeKey,
       reason: "Source evidence was superseded.",
-    });
+    } as const;
+    const revoked = await repository.setMemoryStatus(revokeRequest);
+    const revokeReplay = await repository.setMemoryStatus(revokeRequest);
+    expect(revokeReplay).toEqual(revoked);
+    await expect(repository.setMemoryStatus({ ...revokeRequest, reason: "Different request." }))
+      .rejects.toBeInstanceOf(IdempotencyConflictError);
     const query = deterministicEmbedding(created.memory.content);
     const revokedResults = await repository.retrieveMemories(tenantId, query, 30);
     expect(revokedResults.some((memory) => memory.memoryId === created.memory.memoryId)).toBe(false);
@@ -204,4 +333,14 @@ describe("CockroachDB incident memory integration", () => {
       humanApprovalRequired: true,
     });
   });
+
+  it("passes the live operational memory evaluation without leaking evaluation tenants", async () => {
+    const evaluation = await runSafetyEvaluation(repository);
+    expect(evaluation.total).toBe(10);
+    expect(evaluation.passed).toBe(evaluation.total);
+    expect(evaluation.vectorIndex).toBe("memory_semantic_idx:cosine-vector-search");
+    expect(evaluation.cleanupVerified).toBe(true);
+    expect(evaluation.remainingRowsAfterCleanup).toBe(0);
+    expect(evaluation.checks.every((check) => check.passed)).toBe(true);
+  }, 90_000);
 });

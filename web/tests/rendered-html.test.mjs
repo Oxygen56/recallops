@@ -23,6 +23,8 @@ test("server-renders the complete RecallOps judge experience", async () => {
   assert.match(html, /Memory that knows when to act/i);
   assert.match(html, /Open an incident/i);
   assert.match(html, /Inject response loss after commit/i);
+  assert.match(html, /Run the live 10-check memory gate/i);
+  assert.match(html, /Tenant-prefix retrieval/i);
   assert.match(html, /CockroachDB/i);
   assert.match(html, /Lambda agent/i);
   assert.doesNotMatch(html, /Your site is taking shape|Building your site/i);

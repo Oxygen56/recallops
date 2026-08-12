@@ -6,7 +6,7 @@ RecallOps is a reversible supply-chain incident agent whose CockroachDB memory s
 
 ## Problem and solution
 
-Operational teams lose context when one shift cannot reconstruct the last decision, a timed-out retry duplicates work, or stale evidence keeps influencing automation. RecallOps stores state, semantic memory, provenance, proposed actions, immutable events, and receipt delivery in one durable contract. Every action is reversible and requires human approval.
+Operational teams lose context when one shift cannot reconstruct the last decision, a timed-out retry duplicates work, or stale evidence keeps influencing automation. RecallOps stores state, semantic memory, provenance, proposed actions, application-append-only hash-linked events, and receipt delivery in one durable contract. Every action is reversible and requires human approval.
 
 ## Demo
 
@@ -16,11 +16,13 @@ Operational teams lose context when one shift cannot reconstruct the last decisi
 
 ## Architecture
 
-CockroachDB is the persistent memory layer. Distributed Vector Indexing powers tenant-prefixed recall; Managed MCP provides a read-only cloud audit. AWS Lambda runs the API, S3 stores decision receipts, and Bedrock optionally generates schema-bounded reversible proposals. See `reports/architecture.md`.
+CockroachDB is the persistent memory layer. Distributed Vector Indexing powers tenant-prefixed recall; Managed MCP provides a read-only cloud audit. The implemented AWS path targets Lambda for the API, S3 for decision receipts, and optional Bedrock for schema-bounded reversible proposals. Live AWS receipts remain pending. See `reports/architecture.md`.
 
 ## Evidence
 
-- 10 API/database tests passed against CockroachDB v26.2.0.
+- 14 API/database tests passed live against CockroachDB Cloud v26.2.5.
+- The live operational memory gate passed 10/10 in 30.395 seconds and verified zero evaluation rows remained after cleanup.
+- Managed MCP verified all eight advertised read tools and all five project-required checks; the temporary audit key was deleted afterward.
 - 2 server-rendered interface/accessibility tests passed.
 - 7 end-to-end failure assertions passed.
 - Secret scan found no committed credential pattern.
@@ -28,7 +30,7 @@ CockroachDB is the persistent memory layer. Distributed Vector Indexing powers t
 
 ## Judging rubric mapping
 
-- Memory design: provenance, admission, expiry, revocation, restoration, cross-session recall, immutable events.
+- Memory design: provenance, admission, expiry, revocation, restoration, cross-session recall, and hash-linked events.
 - Technical implementation: serializable transactions, idempotency, revision checks, vector index, outbox, MCP boundary.
 - Real-world impact: prevents duplicate holds, premature reroutes, and handoff context loss.
 - Product readiness: interactive fault injection, approval/undo, health evidence, least privilege, deterministic fallback.

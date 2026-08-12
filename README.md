@@ -2,30 +2,43 @@
 
 [![RecallOps verification](https://github.com/Oxygen56/recallops/actions/workflows/ci.yml/badge.svg)](https://github.com/Oxygen56/recallops/actions/workflows/ci.yml)
 
-**A reversible supply-chain incident agent with durable, auditable memory.**
+**The incident agent that never duplicates a retried decision—and can prove why.**
 
-RecallOps helps an operations lead respond to delays, quality holds, and supplier failures without repeating past mistakes. Every recommendation is backed by a provenance-bearing memory, every external action is proposed before execution, and every mutation is idempotent, revocable, and recoverable after ambiguous failures.
+RecallOps helps an operations lead respond to delays, quality holds, and supplier failures without repeating past mistakes. Every recommendation is backed by a provenance-bearing memory, every external action is proposed before execution, and incident, action, and memory-lifecycle mutations are request-bound, idempotent, and recoverable after ambiguous failures.
 
-> Hackathon status: active build for the CockroachDB × AWS Agentic Memory Hackathon. The public demo and cloud evidence will be added only after they are verified.
+> Hackathon status: CockroachDB Cloud and Managed MCP are live-verified. AWS deployment and the public integrated demo remain pending account authorization and live receipts.
 
 ## Why this is different
 
 Most “memory agents” are chat history plus a vector store. RecallOps treats memory as operational state:
 
-- **Transactional memory:** incident state, action proposals, immutable events, and semantic memories commit together in CockroachDB.
-- **Distributed retrieval:** a tenant-prefixed CockroachDB vector index retrieves relevant prior incidents without a separate vector database.
+- **Transactional memory:** incident state, action proposals, application-append-only hash-linked events, and semantic memories commit together in CockroachDB.
+- **Distributed retrieval:** a tenant-and-lifecycle-prefixed CockroachDB cosine vector index retrieves relevant prior incidents without a separate vector database; the live gate verifies the physical query plan.
 - **Safe execution:** the agent proposes reversible actions, records approval, and supports compensation instead of silently changing the world.
 - **Failure honesty:** idempotency keys and read-after-timeout reconciliation prevent double actions when a response is lost after commit.
 - **Lifecycle controls:** memories carry provenance, expiry, revocation, and restoration events; revoked or expired memories never enter retrieval.
 - **Cross-session continuity:** a new session can reconstruct why a prior decision was made from the event ledger and evidence receipts.
 - **Bounded model reasoning:** Amazon Bedrock can tailor the decision posture, but its output is schema-checked and limited to reversible, human-approved proposals; the safety playbook remains available as a fail-safe.
+- **Live operational memory gate:** one click exercises a fresh isolated application tenant in CockroachDB across lost responses, racing approvals, compensation, revocation, restoration, expiry, tenant-prefix separation, audit integrity, and the real cosine vector plan.
 
 ## Sponsor technology
 
 - CockroachDB is the system of record and persistent memory layer.
 - CockroachDB Distributed Vector Indexing powers semantic recall.
-- CockroachDB Cloud Managed MCP is the operator/audit path used to inspect the live schema and memory ledger safely. This integration remains marked unverified until the cloud OAuth flow is completed and runtime receipts are captured.
-- AWS Lambda hosts the agent API; Amazon S3 stores tamper-evident decision receipts; Amazon Bedrock provides optional bounded reasoning. The cloud deployment remains marked unverified until an AWS account deployment is completed.
+- CockroachDB Cloud Managed MCP is the operator/audit path used to inspect the live schema and memory ledger safely. All eight advertised read tools and all five project-required checks were live-verified against the Basic cluster; the temporary audit key was deleted afterward.
+- The implemented AWS path hosts the agent API on Lambda and stores encrypted decision receipts in Amazon S3; Amazon Bedrock is an optional bounded-reasoning adapter. The AWS path remains marked unverified until live account receipts are captured.
+
+## Live operational memory safety gate
+
+| Failure class | Live proof |
+| --- | --- |
+| Lost response after commit | same key recovers the committed incident; database counts remain one incident, one memory, one action set, and one creation event |
+| Racing operators | exactly one approval wins; the loser is specifically rejected as a stale revision; the ledger contains one approval event |
+| Human control | an approved proposal can be recorded as compensated at the next revision |
+| Memory lifecycle | a new session recalls the prior decision; revoked and expired rows do not influence recall; restoration is visible |
+| Isolation and integrity | a shadow-tenant sentinel is excluded, the payload plus audit-metadata hash chain recomputes, and `EXPLAIN` shows `memory_semantic_idx` executing a cosine vector search |
+
+Run it with `cd api && npm run evaluate`. The JSON receipt is written to `artifacts/evidence/safety-evaluation.json`.
 
 ## Local quick start
 
@@ -54,6 +67,14 @@ The API defaults to `http://localhost:8787`; the web app prints its own local UR
 
 The verification gate starts CockroachDB, applies the schema, runs unit and integration tests, executes the complete demo scenario, and writes machine-readable evidence under `artifacts/evidence/`.
 
+Run only the judge-facing operational memory gate:
+
+```bash
+cd api && npm run evaluate
+```
+
+This creates fresh UUID evaluation tenants, executes the ten database-backed checks, verifies the cosine vector plan, then audits deletion across every evaluation table. The latest cloud run passed 10/10 in 30.395 seconds on CockroachDB Cloud v26.2.5, with cleanup verified and zero rows remaining. Machine-readable receipts are `artifacts/evidence/safety-evaluation.json`, `artifacts/evidence/mcp-audit.json`, and `artifacts/evidence/cloud-cockroachdb.json`.
+
 ## Repository map
 
 - `api/` — agent engine, CockroachDB repository, AWS receipt sink, HTTP/Lambda entrypoints
@@ -70,7 +91,8 @@ Source code and local tests are not cloud proof. Claims in this README are inten
 
 - implemented: the code path exists;
 - locally verified: a reproducible local test produced a receipt;
-- cloud verified: a live CockroachDB Cloud/AWS run produced a redacted receipt;
+- CockroachDB Cloud verified: a live database or Managed MCP run produced a redacted receipt;
+- AWS cloud verified: a live Lambda invocation or S3/Bedrock operation produced a redacted receipt;
 - submitted: Devpost returned a final submission receipt.
 
 See `reports/evidence-matrix.md` for the current state.

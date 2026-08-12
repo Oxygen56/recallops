@@ -31,9 +31,14 @@ jobs:
           npm run build
           npm test
           npm run demo
+          npm run evaluate
       - name: Verify judge interface
         working-directory: web
+        env:
+          VITE_API_BASE_URL: https://api.recallops.invalid
         run: |
           npm ci
           npm run lint
           npm test
+          ! grep -R -E 'localhost:8787|NEXT_PUBLIC_API_BASE_URL' dist/client dist/server
+          grep -R -q 'https://api.recallops.invalid' dist/client
