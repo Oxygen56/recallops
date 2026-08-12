@@ -51,7 +51,7 @@ export interface McpAuditResult {
   clusterIdSuffix: string;
   database: string;
   table: string;
-  mode: "read-only";
+  mode: "client-enforced-read-only-allowlist";
   availableReadOnlyTools: string[];
   requiredReadOnlyTools: string[];
   failedRequiredTools: string[];
@@ -218,7 +218,7 @@ export async function runMcpAudit(options: McpAuditOptions): Promise<McpAuditRes
       clusterIdSuffix: options.clusterId.slice(-6),
       database,
       table,
-      mode: "read-only",
+      mode: "client-enforced-read-only-allowlist",
       availableReadOnlyTools: available.map((tool) => tool.name),
       requiredReadOnlyTools: [...REQUIRED_AUDIT_TOOLS],
       failedRequiredTools,
