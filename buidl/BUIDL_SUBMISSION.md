@@ -16,15 +16,15 @@ Operational teams lose context when one shift cannot reconstruct the last decisi
 
 ## Architecture
 
-CockroachDB is the persistent memory layer. Distributed Vector Indexing powers tenant-prefixed recall; Managed MCP provides a read-only cloud audit. The implemented AWS path targets Lambda for the API, S3 for decision receipts, and optional Bedrock for schema-bounded reversible proposals. Live AWS receipts remain pending. See `reports/architecture.md`.
+CockroachDB is the persistent memory layer. Distributed Vector Indexing powers tenant-prefixed recall; RecallOps constrains Managed MCP audit calls with a client-enforced read-only allowlist. The implemented AWS path targets Lambda for the API, S3 for decision receipts, and optional Bedrock for schema-bounded reversible proposals. Live AWS receipts remain pending. See `reports/architecture.md`.
 
 ## Evidence
 
-- 14 API/database tests passed live against CockroachDB Cloud v26.2.5.
+- The full API/database suite passed live against CockroachDB Cloud v26.2.5.
 - The live operational memory gate passed 10/10 in 30.395 seconds and verified zero evaluation rows remained after cleanup.
-- Managed MCP verified all eight advertised read tools and all five project-required checks; the temporary audit key was deleted afterward.
-- 2 server-rendered interface/accessibility tests passed.
-- 7 end-to-end failure assertions passed.
+- RecallOps verified its client-enforced allowlist across all eight advertised Managed MCP read tools and all five project-required checks; the temporary audit key was deleted afterward.
+- The full server-rendered interface/accessibility suite passed.
+- The full end-to-end failure suite passed.
 - Secret scan found no committed credential pattern.
 - Full claim boundaries: `reports/evidence-matrix.md`.
 

@@ -10,16 +10,6 @@ Parameters:
   DemoTenantId:
     Type: String
     Default: demo-logistics
-  McpServerUrl:
-    Type: String
-    Default: https://cockroachlabs.cloud/mcp
-  McpClusterId:
-    Type: String
-    Default: ""
-  McpServiceAccountApiKey:
-    Type: String
-    NoEcho: true
-    Default: ""
   BedrockModelId:
     Type: String
     Default: ""
@@ -39,9 +29,6 @@ Globals:
         DATABASE_URL: !Ref DatabaseUrl
         DEMO_TENANT_ID: !Ref DemoTenantId
         EVIDENCE_BUCKET: !Ref EvidenceBucket
-        MCP_SERVER_URL: !Ref McpServerUrl
-        MCP_CLUSTER_ID: !Ref McpClusterId
-        MCP_SERVICE_ACCOUNT_API_KEY: !Ref McpServiceAccountApiKey
         BEDROCK_MODEL_ID: !Ref BedrockModelId
         DATABASE_POOL_MAX: "2"
 

@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { seedDemo } from "./demoData.js";
 import { canonicalJson } from "./hash.js";
 
 const config = loadConfig();
@@ -22,7 +23,8 @@ const command = {
 };
 
 try {
-  await app.request("/v1/demo/reset", { method: "POST" });
+  await repository.resetDemoTenant(tenantId);
+  await seedDemo(repository, tenantId);
   const lostResponse = await app.request("/v1/incidents", {
     method: "POST",
     headers: {

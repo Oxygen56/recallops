@@ -8,9 +8,9 @@ Target runtime: 2:50. Spoken language: English. Show the live product, not slide
 
 Show the hero and the five live evidence counters.
 
-Open the operational memory gate and click **Run 10-check memory gate**. Keep the click and the real **RUNNING** state visible for two seconds, then use an explicit on-screen jump cut: **30.4 seconds later — same live run**. Do not shorten or replace the elapsed time shown in the receipt.
+Open the operational memory gate and click **Run 10-check memory gate**. Keep the click and the real **RUNNING** state visible for two seconds, then use an explicit on-screen jump cut: **≈48 seconds later — same live run**. The public flow currently takes about 48 seconds; preserve the exact elapsed time shown by the recorded receipt rather than replacing it with the caption.
 
-“This is not a checklist screenshot. RecallOps attacks a fresh isolated application tenant in CockroachDB, returns per-check proof, verifies the real cosine vector plan, and audits cleanup to zero rows.” Hold on the 10/10 result, its 30.4-second elapsed time, database version, vector index, cleanup count, and short evaluation ID.
+“This is not a checklist screenshot. RecallOps attacks a fresh isolated application tenant in CockroachDB, returns per-check proof, verifies the real cosine vector plan, and audits cleanup to zero rows.” Hold on the 10/10 result, its displayed elapsed time, database version, vector index, cleanup count, and short evaluation ID.
 
 ## 0:24–1:00 — Ambiguous commit
 
@@ -38,12 +38,12 @@ Revoke the admitted memory, then restore it.
 
 Scroll to the architecture.
 
-“CockroachDB stores incident state, vector memory, revisions, events, and the outbox in one serializable contract. Distributed Vector Indexing powers recall. Managed MCP audits the live ledger read-only. The implemented AWS path deploys the API to Lambda and receipts to S3; Bedrock is an optional bounded-reasoning adapter. This cut does not claim those AWS paths as live until their receipts are captured.”
+“CockroachDB stores incident state, vector memory, revisions, events, and the outbox in one serializable contract. Distributed Vector Indexing powers recall. RecallOps constrains Managed MCP audit calls with a client-enforced read-only allowlist. The implemented AWS path targets Lambda and S3; Bedrock is an optional bounded-reasoning adapter. This cut does not claim those AWS paths as live until their receipts are captured.”
 
 ## 2:28–2:50 — Proof and close
 
 Show the test/evidence summary and return to the hero.
 
-“RecallOps passes fourteen API and database tests, two interface tests, seven end-to-end failure assertions, and a live ten-check operational memory gate. Memory that knows when to act—and when to forget.”
+“RecallOps passes the full API, database, interface, and end-to-end suite, plus a live ten-check operational memory gate. Memory that knows when to act—and when to forget.”
 
 End card: RecallOps · public repository · live demo QR · Apache-2.0.

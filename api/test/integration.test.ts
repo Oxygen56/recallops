@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { createApp } from "../src/app.js";
 import { seedDemo } from "../src/demoData.js";
-import { deterministicEmbedding } from "../src/embedding.js";
+import { deterministicEmbedding, vectorLiteral } from "../src/embedding.js";
 import { DecisionEngine } from "../src/engine.js";
 import {
   CockroachRepository,
@@ -49,6 +49,29 @@ describe("CockroachDB incident memory integration", () => {
     });
     const after = await repository.retrieveMemories(tenantId, query, 20);
     expect(after.some((memory) => memory.kind === "expired-test")).toBe(false);
+
+    const denseTenant = `eval-${randomUUID()}`;
+    const live = await repository.seedMemory({
+      tenantId: denseTenant,
+      kind: "dense-live-sentinel",
+      content: "port delay carrier milestone live sentinel",
+      embedding: query,
+      provenance: { synthetic: true },
+    });
+    try {
+      await repository.pool.query(
+        `INSERT INTO memory_records
+           (tenant_id, kind, content, embedding, provenance, expires_at)
+         SELECT $1, 'dense-expired-sentinel', 'expired perfect match ' || value::STRING,
+                $2::VECTOR, '{"synthetic":true}'::JSONB, now() - INTERVAL '1 minute'
+           FROM generate_series(1, 80) AS rows(value)`,
+        [denseTenant, vectorLiteral(query)],
+      );
+      const denseResults = await repository.retrieveMemories(denseTenant, query, 1);
+      expect(denseResults.map((memory) => memory.memoryId)).toContain(live.memoryId);
+    } finally {
+      await repository.deleteEvaluationTenants([denseTenant]);
+    }
   });
 
   it("deduplicates retries and preserves cross-session context", async () => {
@@ -251,6 +274,19 @@ describe("CockroachDB incident memory integration", () => {
       },
       `test-lifecycle-${randomUUID()}`,
     );
+    const noOpRequest = {
+      tenantId,
+      memoryId: created.memory.memoryId,
+      status: "active",
+      actor: "quality-lead",
+      sessionId: "lifecycle-noop",
+      idempotencyKey: `test-noop-${randomUUID()}`,
+      reason: "An already-active memory remains active.",
+    } as const;
+    const noOp = await repository.setMemoryStatus(noOpRequest);
+    expect(await repository.setMemoryStatus(noOpRequest)).toEqual(noOp);
+    await expect(repository.setMemoryStatus({ ...noOpRequest, status: "revoked" }))
+      .rejects.toBeInstanceOf(IdempotencyConflictError);
     const revokeKey = `test-revoke-${randomUUID()}`;
     const revokeRequest = {
       tenantId,

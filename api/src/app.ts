@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Config } from "./config.js";
-import { seedDemo } from "./demoData.js";
 import { DecisionEngine } from "./engine.js";
 import { InjectedAfterCommitError, processIncidentCommand } from "./fault.js";
 import { runMcpAudit } from "./mcpAudit.js";
@@ -251,14 +250,6 @@ export function createApp(config: Config) {
       apiKey: config.mcpApiKey,
     });
     return context.json(audit, audit.verified ? 200 : 502);
-  });
-
-  app.post("/v1/demo/reset", async (context) => {
-    await repository.acquireDemoQuota("demo-reset", 12);
-    const tenantId = config.demoTenantId;
-    await repository.resetDemoTenant(tenantId);
-    await seedDemo(repository, tenantId);
-    return context.json({ status: "reset", tenantId, memoriesSeeded: 3 });
   });
 
   return { app, repository };

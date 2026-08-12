@@ -21,7 +21,7 @@ Supply-chain teams lose time and money when an incident agent remembers recommen
 ## Judge strategy
 
 1. **Agentic Memory Design:** one CockroachDB transaction links incident state, application-append-only hash-linked event, semantic memory, action proposal, provenance, and outbox receipt.
-2. **Technological Implementation:** tenant-and-lifecycle-prefixed cosine vector retrieval with live plan proof, serializable retry handling, request-bound idempotency, row-level TTL, and a fail-closed read-only MCP audit path.
+2. **Technological Implementation:** tenant-and-lifecycle-prefixed cosine vector retrieval with live plan proof, serializable retry handling, request-bound idempotency, row-level TTL, and a fail-closed, client-enforced read-only MCP audit path.
 3. **Real-World Impact:** prevent duplicate purchase holds, repeated bad reroutes, and context loss between shift handoffs.
 4. **Product Readiness:** approval gates, compensation, fault injection, health evidence, least privilege, budget-aware AWS design, and deterministic fallback behavior.
 5. **Creativity & Originality:** the demo proves forgetting, revocation, recovery, and cross-session continuity—not merely “RAG over incident notes.”

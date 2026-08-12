@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787").replace(/\/+$/, "");
 const TENANT = "demo-logistics";
 
 type Memory = {
@@ -146,6 +146,7 @@ export default function Home() {
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState("Connecting to the memory ledger…");
   const [faultMode, setFaultMode] = useState(true);
+  const [syntheticConfirmed, setSyntheticConfirmed] = useState(false);
   const [recoveryProof, setRecoveryProof] = useState(false);
   const [apiOnline, setApiOnline] = useState(false);
 
@@ -188,22 +189,17 @@ export default function Home() {
     return () => { cancelled = true; };
   }, []);
 
-  async function resetDemo() {
-    setBusy("reset");
-    setStatus("Resetting the synthetic proof environment…");
-    try {
-      await readJson(await fetch(`${API_BASE}/v1/demo/reset`, { method: "POST" }));
-      setBundle(null);
-      setTimeline([]);
-      setEvaluation(null);
-      setRecoveryProof(false);
-      await refreshEvidence();
-      setStatus("Three provenance-bearing memories are ready");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Reset failed safely");
-    } finally {
-      setBusy(null);
-    }
+  function clearLocalView() {
+    setForm({ ...defaultForm });
+    setBundle(null);
+    setTimeline([]);
+    setEvaluation(null);
+    setRecoveryProof(false);
+    setFaultMode(true);
+    setSyntheticConfirmed(false);
+    setStatus(apiOnline
+      ? "Local view cleared; stored demo evidence was not changed"
+      : "Local view cleared; reconnect the API to run a proof");
   }
 
   async function runEvaluation() {
@@ -223,6 +219,10 @@ export default function Home() {
 
   async function analyzeIncident(event: React.FormEvent) {
     event.preventDefault();
+    if (!syntheticConfirmed) {
+      setStatus("Confirm that the incident contains synthetic demo data only");
+      return;
+    }
     setBusy("analyze");
     setRecoveryProof(false);
     const idempotencyKey = makeKey("judge-incident");
@@ -337,6 +337,7 @@ export default function Home() {
   }
 
   const displayedSafetyChecks = evaluation?.checks ?? defaultSafetyChecks;
+  const hasLocalProof = Boolean(evaluation || bundle || timeline.length);
 
   return (
     <main>
@@ -351,12 +352,12 @@ export default function Home() {
         </div>
         <button
           className="quietButton"
-          onClick={evaluation
-            ? resetDemo
+          onClick={hasLocalProof
+            ? clearLocalView
             : () => document.getElementById("safety-gate")?.scrollIntoView({ behavior: "smooth" })}
           disabled={busy !== null}
         >
-          {busy === "reset" ? "Resetting…" : evaluation ? "Reset proof" : "Run memory gate"}
+          {busy === "evaluate" ? "Running…" : hasLocalProof ? "Clear local view" : "Run memory gate"}
         </button>
       </header>
 
@@ -462,10 +463,20 @@ export default function Home() {
               <input aria-label="Inject response loss after commit" type="checkbox" checked={faultMode} onChange={(event) => setFaultMode(event.target.checked)} />
               <span><strong>Inject response loss after commit</strong><small>Proves read-after-timeout reconciliation and idempotency.</small></span>
             </label>
-            <button className="primaryButton" type="submit" disabled={busy !== null || !apiOnline}>
+            <label className="faultToggle">
+              <input
+                aria-label="Confirm synthetic demo data only"
+                type="checkbox"
+                required
+                checked={syntheticConfirmed}
+                onChange={(event) => setSyntheticConfirmed(event.target.checked)}
+              />
+              <span><strong>Synthetic data only — demo inputs</strong><small>I confirm this contains no personal, confidential, or real supply-chain data.</small></span>
+            </label>
+            <button className="primaryButton" type="submit" disabled={busy !== null || !apiOnline || !syntheticConfirmed}>
               <span>{busy === "analyze" ? "Running the proof…" : "Analyze & write memory"}</span><b>↗</b>
             </button>
-            <p className="formFoot">Synthetic data only · human approval required · no external action executes automatically</p>
+            <p className="formFoot">Client-enforced synthetic-data confirmation · human approval required · no external action executes automatically</p>
           </form>
 
           <div className="decisionPanel">
@@ -543,15 +554,15 @@ export default function Home() {
       </section>
 
       <section className="architecture shell">
-        <div className="sectionHeading"><div><p className="kicker">Built to fail safely</p><h2>One memory, two control planes</h2></div><p>Application traffic uses serializable SQL. Operators and judges get a cluster-scoped, read-only Managed MCP audit path.</p></div>
+        <div className="sectionHeading"><div><p className="kicker">Built to fail safely</p><h2>One memory, two control planes</h2></div><p>Application traffic uses serializable SQL. RecallOps restricts Managed MCP audit calls with a cluster-scoped, client-enforced read-only allowlist. AWS nodes are implemented paths; live AWS verification is pending.</p></div>
         <div className="archFlow">
           <ArchNode step="01" label="Incident" detail="operator evidence" />
           <span className="connector">→</span>
-          <ArchNode step="02" label="Lambda agent" detail="decision + guardrails" />
+          <ArchNode step="02" label="Lambda agent path" detail="implemented · live pending" />
           <span className="connector">→</span>
           <ArchNode featured step="03" label="CockroachDB" detail="state · vectors · events" />
           <span className="connector split">↗<br />↘</span>
-          <div className="archStack"><ArchNode step="04A" label="Amazon S3" detail="decision receipts" /><ArchNode step="04B" label="Managed MCP" detail="read-only audit" /></div>
+          <div className="archStack"><ArchNode step="04A" label="Amazon S3 path" detail="implemented · live pending" /><ArchNode step="04B" label="Managed MCP" detail="client-enforced read-only" /></div>
         </div>
       </section>
 

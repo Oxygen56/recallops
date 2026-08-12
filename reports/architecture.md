@@ -3,14 +3,14 @@
 ```mermaid
 flowchart LR
     U["Operations lead"] --> W["RecallOps web app"]
-    W --> L["AWS Lambda agent API"]
+    W --> L["AWS Lambda agent path (implemented; live pending)"]
     L --> E["Incident decision engine"]
     E --> C[("CockroachDB Cloud")]
     C --> V["Distributed vector index"]
     C --> T["Serializable state + event ledger"]
     E --> O["Transactional outbox"]
-    O --> S["Amazon S3 evidence receipts"]
-    E --> B["Amazon Bedrock bounded reasoning"]
+    O --> S["Amazon S3 receipt path (implemented; live pending)"]
+    E --> B["Amazon Bedrock adapter (optional; live pending)"]
     M["Managed MCP operator audit"] --> C
     J["Judge / operator"] --> M
 ```
@@ -33,9 +33,9 @@ The response is derived only after commit. If the response is lost, replaying th
 - Retrieval excludes revoked or expired memories at query time; TTL later removes eligible rows.
 - Action execution uses compare-and-set revision checks and records a compensating transition for undo.
 - External side effects use an outbox and stable receipt key.
-- Demo data is synthetic and contains no personal or commercially sensitive information.
-- The public demo accepts only the configured synthetic tenant and enforces database-backed hourly quotas. This is an application boundary, not database row-level security. The shared demo reset is not a multi-user isolation boundary and must be disabled or protected before public launch.
-- Managed MCP audit uses a temporary cluster-scoped credential, while RecallOps enforces a read-only client allowlist and never calls write tools. The temporary key is deleted after evidence capture.
+- Project-owned seed and evidence data are synthetic; the public UI requires visitors to confirm that they are entering synthetic demo data only.
+- The public demo accepts only the configured synthetic tenant and enforces database-backed hourly quotas. This is an application boundary, not database row-level security. **Clear local view** changes only browser state, and the public API exposes no destructive reset route.
+- Managed MCP audit uses a temporary cluster-scoped credential, while RecallOps enforces a client-side read-only allowlist and never calls tools outside that allowlist. The temporary key is deleted after evidence capture. This is a client boundary, not a claim that the credential or MCP server is intrinsically read-only.
 - Bedrock output is accepted only when it matches a strict schema: one to three reversible, low/medium-risk proposals. No model output can mark an action executed.
 
 ## Failure model

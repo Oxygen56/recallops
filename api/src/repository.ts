@@ -713,7 +713,7 @@ export class CockroachRepository {
         reason: input.reason,
       });
       if (
-        replay.rows[0].event_type !== expectedEventType ||
+        ![expectedEventType, "memory.status_unchanged"].includes(replay.rows[0].event_type) ||
         payload.memoryId !== input.memoryId ||
         payload.toStatus !== input.status ||
         payload.requestFingerprint !== fingerprint
@@ -743,7 +743,34 @@ export class CockroachRepository {
       );
       if (before.rowCount === 0) throw new NotFoundError("memory");
       const current = memoryFromRow(before.rows[0]);
-      if (current.status === input.status) return current;
+      if (current.status === input.status) {
+        const incidentId = current.incidentId ?? current.memoryId;
+        await this.appendIncidentEvent(client, {
+          tenantId: input.tenantId,
+          incidentId,
+          eventType: "memory.status_unchanged",
+          payload: {
+            memoryId: current.memoryId,
+            fromStatus: current.status,
+            toStatus: input.status,
+            reason: input.reason,
+            revision: current.revision,
+            resultMemory: current,
+            requestFingerprint: requestHash({
+              tenantId: input.tenantId,
+              memoryId: input.memoryId,
+              status: input.status,
+              actor: input.actor,
+              sessionId: input.sessionId,
+              reason: input.reason,
+            }),
+          },
+          actor: input.actor,
+          sessionId: input.sessionId,
+          idempotencyKey: input.idempotencyKey,
+        });
+        return current;
+      }
       const updated = await client.query(
         `UPDATE memory_records
             SET status = $3, revision = revision + 1, updated_at = now()
@@ -814,7 +841,10 @@ export class CockroachRepository {
       reason: input.reason,
     });
     if (
-      replay.rows[0].event_type !== (input.status === "revoked" ? "memory.revoked" : "memory.restored") ||
+      ![
+        input.status === "revoked" ? "memory.revoked" : "memory.restored",
+        "memory.status_unchanged",
+      ].includes(replay.rows[0].event_type) ||
       payload.memoryId !== input.memoryId ||
       payload.toStatus !== input.status ||
       payload.requestFingerprint !== fingerprint

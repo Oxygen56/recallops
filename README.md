@@ -18,15 +18,15 @@ Most “memory agents” are chat history plus a vector store. RecallOps treats 
 - **Failure honesty:** idempotency keys and read-after-timeout reconciliation prevent double actions when a response is lost after commit.
 - **Lifecycle controls:** memories carry provenance, expiry, revocation, and restoration events; revoked or expired memories never enter retrieval.
 - **Cross-session continuity:** a new session can reconstruct why a prior decision was made from the event ledger and evidence receipts.
-- **Bounded model reasoning:** Amazon Bedrock can tailor the decision posture, but its output is schema-checked and limited to reversible, human-approved proposals; the safety playbook remains available as a fail-safe.
+- **Bounded model reasoning:** the optional implemented Amazon Bedrock adapter is designed to tailor the decision posture, while schema checks limit accepted output to reversible, human-approved proposals; the safety playbook remains available as a fail-safe. A live Bedrock invocation remains unverified.
 - **Live operational memory gate:** one click exercises a fresh isolated application tenant in CockroachDB across lost responses, racing approvals, compensation, revocation, restoration, expiry, tenant-prefix separation, audit integrity, and the real cosine vector plan.
 
 ## Sponsor technology
 
 - CockroachDB is the system of record and persistent memory layer.
 - CockroachDB Distributed Vector Indexing powers semantic recall.
-- CockroachDB Cloud Managed MCP is the operator/audit path used to inspect the live schema and memory ledger safely. All eight advertised read tools and all five project-required checks were live-verified against the Basic cluster; the temporary audit key was deleted afterward.
-- The implemented AWS path hosts the agent API on Lambda and stores encrypted decision receipts in Amazon S3; Amazon Bedrock is an optional bounded-reasoning adapter. The AWS path remains marked unverified until live account receipts are captured.
+- RecallOps audits CockroachDB Cloud Managed MCP through a client-enforced allowlist of eight read tools. All eight advertised tools and all five project-required checks were live-verified against the Basic cluster; the temporary audit key was deleted afterward. This is an application-client boundary, not a claim that the credential or MCP server is intrinsically read-only.
+- The implemented AWS path targets Lambda for the agent API and encrypted Amazon S3 objects for decision receipts; Amazon Bedrock is an optional bounded-reasoning adapter. None of these AWS paths is marked live until corresponding account receipts are captured.
 
 ## Live operational memory safety gate
 
@@ -65,7 +65,7 @@ The API defaults to `http://localhost:8787`; the web app prints its own local UR
 ./scripts/verify_local.sh
 ```
 
-The verification gate starts CockroachDB, applies the schema, runs unit and integration tests, executes the complete demo scenario, and writes machine-readable evidence under `artifacts/evidence/`.
+The verification gate starts CockroachDB, applies the schema, runs the full unit and integration suite, executes the complete demo scenario, and writes machine-readable evidence under `artifacts/evidence/`.
 
 Run only the judge-facing operational memory gate:
 

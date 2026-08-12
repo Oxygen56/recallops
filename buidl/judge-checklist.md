@@ -4,7 +4,7 @@
 - [x] Apache-2.0 license is visible at repository root.
 - [x] CockroachDB is the persistent memory layer.
 - [x] Distributed Vector Indexing is implemented and locally verified.
-- [x] Managed MCP client is implemented with a read-only allowlist.
+- [x] Managed MCP client is implemented with a client-enforced read-only allowlist.
 - [x] AWS Lambda, S3, and Bedrock deployment paths are implemented.
 - [x] Idempotency, concurrency, revocation, expiry, recovery, and cross-session behavior have automated tests.
 - [x] Judge UI runs a live ten-check operational memory gate and returns success only after cleanup is verified with zero rows.

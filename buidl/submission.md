@@ -10,7 +10,7 @@ Memory that knows when to act — and when to forget.
 
 ## Short description
 
-RecallOps is a reversible supply-chain incident agent whose memory survives retries, concurrent operators, revoked evidence, expiry, and shift changes. CockroachDB stores operational state, semantic memory, and an application-append-only hash-linked decision ledger together; the implemented AWS deployment path runs the agent on Lambda and preserves encrypted decision receipts in S3. Live AWS receipts remain pending.
+RecallOps is a reversible supply-chain incident agent whose memory survives retries, concurrent operators, revoked evidence, expiry, and shift changes. CockroachDB stores operational state, semantic memory, and an application-append-only hash-linked decision ledger together. An implemented but not yet live-verified AWS path targets Lambda for the agent and encrypted S3 objects for decision receipts.
 
 ## Inspiration
 
@@ -24,8 +24,8 @@ An operator submits a delay, quality, capacity, or compliance incident. RecallOp
 
 - CockroachDB is the persistent memory system of record.
 - Distributed Vector Indexing performs tenant-prefixed semantic recall.
-- CockroachDB Cloud Managed MCP provides a client-enforced read-only audit of the live schema and ledger through a temporary cluster-scoped credential; the evidence key is deleted after capture.
-- The implemented AWS deployment path runs the API on Lambda and stores stable evidence receipts in Amazon S3. Amazon Bedrock can optionally tailor schema-bounded reversible proposals. These paths are not claimed as live until AWS receipts are captured.
+- RecallOps audits the live schema and ledger through CockroachDB Cloud Managed MCP using a client-enforced read-only allowlist and a temporary cluster-scoped credential; the evidence key is deleted after capture.
+- The implemented AWS deployment path targets Lambda for the API and Amazon S3 for stable evidence receipts. Amazon Bedrock is an optional schema-bounded reversible-proposal adapter. None of these AWS paths is claimed as live until corresponding receipts are captured.
 - A serializable transaction, idempotency keys, revision checks, a transactional outbox, row-level TTL, and lifecycle events make failure and forgetting testable.
 
 ## Challenges
@@ -38,8 +38,8 @@ The hardest part was treating the moment after a successful commit but before a 
 - Concurrent approval produces one winner and one explicit stale-revision rejection.
 - Revoked and expired memories are excluded from retrieval.
 - Cross-session recall reconstructs prior outcomes and provenance.
-- Model output remains reversible and human-approved; the system fails safely without the model.
-- Release gate: 14/14 API/database tests passed live on CockroachDB Cloud v26.2.5; the operational memory gate passed 10/10 with cleanup verified to zero rows, and Managed MCP passed all eight advertised read tools.
+- The optional model-adapter output is schema-bounded to reversible, human-approved proposals; the system fails safely without a live model.
+- Release gate: the full API/database suite passed live on CockroachDB Cloud v26.2.5; the operational memory gate passed 10/10 with cleanup verified to zero rows, and RecallOps completed its client-enforced eight-tool Managed MCP read allowlist.
 
 ## What we learned
 

@@ -35,7 +35,7 @@ jobs:
       - name: Verify judge interface
         working-directory: web
         env:
-          VITE_API_BASE_URL: https://api.recallops.invalid
+          VITE_API_BASE_URL: https://api.recallops.invalid/
         run: |
           npm ci
           npm run lint

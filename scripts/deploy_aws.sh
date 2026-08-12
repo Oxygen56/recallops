@@ -13,6 +13,10 @@ for command_name in aws sam; do
     exit 2
   fi
 done
+if [[ -n "${MCP_SERVICE_ACCOUNT_API_KEY:-}${MCP_CLUSTER_ID:-}" ]]; then
+  echo "Refusing to place a cluster-operator MCP credential in the public Lambda environment. Run MCP evidence capture offline with a temporary key." >&2
+  exit 2
+fi
 if [[ -z "${DATABASE_URL:-}" ]]; then
   echo "DATABASE_URL is required and must be the least-privileged CockroachDB Cloud runtime URL." >&2
   exit 2
@@ -73,6 +77,4 @@ sam deploy \
   --region "${AWS_REGION:-us-east-1}" \
   --parameter-overrides \
     "DatabaseUrl=$DATABASE_URL" \
-    "McpClusterId=${MCP_CLUSTER_ID:-}" \
-    "McpServiceAccountApiKey=${MCP_SERVICE_ACCOUNT_API_KEY:-}" \
     "BedrockModelId=${BEDROCK_MODEL_ID:-}"

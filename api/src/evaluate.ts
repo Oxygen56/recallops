@@ -10,10 +10,15 @@ const repository = new CockroachRepository(config.databaseUrl);
 
 try {
   const evaluation = await runSafetyEvaluation(repository);
+  const receipt = {
+    ...evaluation,
+    sourceCommit: process.env.SOURCE_COMMIT || undefined,
+    sourceTree: process.env.SOURCE_TREE || undefined,
+  };
   const outputDirectory = resolve(process.cwd(), "../artifacts/evidence");
   const target = resolve(outputDirectory, "safety-evaluation.json");
   await mkdir(outputDirectory, { recursive: true });
-  await writeFile(target, `${canonicalJson(evaluation)}\n`, "utf8");
+  await writeFile(target, `${canonicalJson(receipt)}\n`, "utf8");
   console.log(JSON.stringify({
     target,
     passed: evaluation.passed,
