@@ -21,6 +21,18 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   echo "DATABASE_URL is required and must be the least-privileged CockroachDB Cloud runtime URL." >&2
   exit 2
 fi
+if [[ ! "${EXPECTED_AWS_ACCOUNT_ID:-}" =~ ^[0-9]{12}$ ]]; then
+  echo "EXPECTED_AWS_ACCOUNT_ID must be the exact 12-digit account reviewed for this deployment." >&2
+  exit 2
+fi
+
+source_commit="$(git -C "$project_dir" rev-parse HEAD)"
+source_tree="$(git -C "$project_dir" rev-parse 'HEAD^{tree}')"
+dirty_source="$(git -C "$project_dir" status --porcelain=v1 --untracked-files=all | awk 'substr($0, 4) !~ /^artifacts\/evidence\// { print; exit }')"
+if [[ -n "$dirty_source" ]]; then
+  echo "Refusing to deploy a dirty source tree. Commit source changes first; evidence files may remain uncommitted." >&2
+  exit 2
+fi
 
 DATABASE_URL="$DATABASE_URL" node <<'NODE'
 const raw = process.env.DATABASE_URL;
@@ -53,7 +65,11 @@ if (decodeURIComponent(url.password).length < 20) {
 }
 NODE
 
-aws sts get-caller-identity >/dev/null
+current_account_id="$(aws sts get-caller-identity --query Account --output text)"
+if [[ "$current_account_id" != "$EXPECTED_AWS_ACCOUNT_ID" ]]; then
+  echo "AWS account mismatch. Refusing to deploy outside the explicitly reviewed account." >&2
+  exit 2
+fi
 available_concurrency="$(aws lambda get-account-settings \
   --region "${AWS_REGION:-us-east-1}" \
   --query 'AccountLimit.UnreservedConcurrentExecutions' \
@@ -77,4 +93,6 @@ sam deploy \
   --region "${AWS_REGION:-us-east-1}" \
   --parameter-overrides \
     "DatabaseUrl=$DATABASE_URL" \
-    "BedrockModelId=${BEDROCK_MODEL_ID:-}"
+    "BedrockModelId=${BEDROCK_MODEL_ID:-}" \
+    "SourceCommit=$source_commit" \
+    "SourceTree=$source_tree"

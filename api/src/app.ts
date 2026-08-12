@@ -116,6 +116,10 @@ export function createApp(config: Config) {
       service: "recallops-agent-api",
       database: health,
       awsReceiptSink: config.evidenceBucket ? "amazon-s3" : "local-file-evidence-sink",
+      source: {
+        commit: config.sourceCommit ?? null,
+        tree: config.sourceTree ?? null,
+      },
     });
   });
 

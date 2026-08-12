@@ -13,6 +13,14 @@ Parameters:
   BedrockModelId:
     Type: String
     Default: ""
+  SourceCommit:
+    Type: String
+    AllowedPattern: "^[0-9a-f]{40}$"
+    Description: Git commit used to build the deployed Lambda bundle
+  SourceTree:
+    Type: String
+    AllowedPattern: "^[0-9a-f]{40}$"
+    Description: Git tree used to build the deployed Lambda bundle
 
 Conditions:
   HasBedrockModel: !Not [!Equals [!Ref BedrockModelId, ""]]
@@ -31,6 +39,8 @@ Globals:
         EVIDENCE_BUCKET: !Ref EvidenceBucket
         BEDROCK_MODEL_ID: !Ref BedrockModelId
         DATABASE_POOL_MAX: "2"
+        SOURCE_COMMIT: !Ref SourceCommit
+        SOURCE_TREE: !Ref SourceTree
 
 Resources:
   EvidenceBucket:

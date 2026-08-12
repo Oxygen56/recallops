@@ -9,6 +9,8 @@ export interface Config {
   mcpApiKey?: string;
   bedrockModelId?: string;
   databasePoolMax: number;
+  sourceCommit?: string;
+  sourceTree?: string;
 }
 
 export function loadConfig(): Config {
@@ -25,5 +27,7 @@ export function loadConfig(): Config {
     mcpApiKey: process.env.MCP_SERVICE_ACCOUNT_API_KEY || undefined,
     bedrockModelId: process.env.BEDROCK_MODEL_ID || undefined,
     databasePoolMax: Math.min(4, Math.max(1, Number(process.env.DATABASE_POOL_MAX ?? 2))),
+    sourceCommit: process.env.SOURCE_COMMIT || undefined,
+    sourceTree: process.env.SOURCE_TREE || undefined,
   };
 }

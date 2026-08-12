@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 evidence_output="$project_dir/artifacts/evidence/cloud-aws.json"
@@ -82,7 +83,10 @@ fi
 
 # Persist only the account number in the temporary directory. The public receipt
 # contains a one-way hash, never the raw account ID or caller ARN.
-aws sts get-caller-identity --query Account --output text > "$verify_tmp_dir/account-id.txt"
+aws sts get-caller-identity \
+  --region "$aws_region" \
+  --query Account \
+  --output text > "$verify_tmp_dir/account-id.txt"
 
 # Lambda queries use explicit projections so Environment.Variables (including the
 # CockroachDB URL) can never reach stdout, temporary files, or the evidence receipt.
@@ -126,9 +130,9 @@ options_status="$(curl --silent --show-error --max-time 28 \
   --output "$verify_tmp_dir/options.body" \
   --dump-header "$verify_tmp_dir/options.headers" \
   --write-out '%{http_code}' \
-  --request OPTIONS "$api_url/health" \
+  --request OPTIONS "$api_url/v1/incidents" \
   --header "Origin: $cors_origin" \
-  --header 'Access-Control-Request-Method: GET' \
+  --header 'Access-Control-Request-Method: POST' \
   --header 'Access-Control-Request-Headers: content-type,idempotency-key,x-recallops-fault')"
 if [[ "$options_status" != "200" && "$options_status" != "204" ]]; then
   echo "CORS preflight failed with HTTP $options_status." >&2
@@ -331,6 +335,9 @@ if (Number(process.env.VERIFY_OPTIONS_STATUS) !== 204 && Number(process.env.VERI
   throw new Error("CORS preflight status failed.");
 }
 if (Number(process.env.VERIFY_HEALTH_STATUS) !== 200 || health.status !== "ok") throw new Error("Cloud API health failed.");
+if (health.source?.commit !== process.env.VERIFY_SOURCE_COMMIT || health.source?.tree !== process.env.VERIFY_SOURCE_TREE) {
+  throw new Error("Cloud API source identity does not match the verified Git commit and tree.");
+}
 if (health.awsReceiptSink !== "amazon-s3") throw new Error("Amazon S3 receipt sink is not active.");
 if (!String(evidence.vectorIndex).includes("active")) throw new Error("Vector index is not present.");
 if (process.env.VERIFY_FAULT_STATUS !== "503") throw new Error("Lost-response fault did not return 503.");
@@ -382,15 +389,14 @@ const receiptBody = fs.readFileSync(path.join(root, "receipt.json"));
 const result = {
   schema: "recallops.cloud-aws-evidence.v1",
   verifiedAt: new Date().toISOString(),
-  source: {
-    commit: process.env.VERIFY_SOURCE_COMMIT,
-    tree: process.env.VERIFY_SOURCE_TREE,
-    worktreeCleanExceptEvidence: true,
-  },
+  sourceCommit: process.env.VERIFY_SOURCE_COMMIT,
+  sourceTree: process.env.VERIFY_SOURCE_TREE,
+  sourceWorktreeCleanExceptEvidence: true,
+  stackSuffix: stackIdSuffix,
   aws: {
     accountIdSha256Prefix: hash(accountId).slice(0, 12),
     region: process.env.VERIFY_REGION,
-    stack: { name: stack.stackName, idSuffix: stackIdSuffix, status: stack.stackStatus },
+    stack: { idSuffix: stackIdSuffix, status: stack.stackStatus },
     lambda: {
       functionNameSha256Prefix: hash(stack.functionName).slice(0, 12),
       runtime: lambda.Runtime,
@@ -425,6 +431,7 @@ const result = {
     cloudWatchLogs: { retentionDays: Number(logGroup.RetentionInDays) },
   },
   application: {
+    deployedSource: health.source,
     cors: {
       optionsStatus: Number(process.env.VERIFY_OPTIONS_STATUS),
       getStatus: Number(process.env.VERIFY_HEALTH_STATUS),
@@ -442,6 +449,7 @@ const result = {
   },
 };
 fs.writeFileSync(process.env.VERIFY_OUTPUT, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
+fs.chmodSync(process.env.VERIFY_OUTPUT, 0o600);
 NODE
 
 echo "AWS verification passed. Evidence: $evidence_output"
